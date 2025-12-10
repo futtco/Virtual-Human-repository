@@ -22,6 +22,9 @@ public class UIManager : MonoBehaviour
     [SerializeField]
     private GameObject onSpeakBtn;
 
+    [SerializeField]
+    private GameObject voiceArea;
+
     [Header("聊天管理器")]
     [SerializeField]
     private ChatManager chatManager;
@@ -48,6 +51,7 @@ public class UIManager : MonoBehaviour
         inputField.gameObject.SetActive(true);
         WriteBtn.gameObject.SetActive(false);
         onSpeakBtn.SetActive(false);
+        voiceArea.SetActive(false);
     }
 
     private void InitializeListeners()
@@ -58,6 +62,10 @@ public class UIManager : MonoBehaviour
 
         // 支持回车发送
         inputField.onEndEdit.AddListener(OnInputFieldEndEdit);
+
+        inputField.onValueChanged.AddListener(OnInputFieldValueChanged);
+
+        UpdateSendButtonState();
     }
 
     private void ChangeToSpeak()
@@ -67,6 +75,8 @@ public class UIManager : MonoBehaviour
 
         speakBtn.gameObject.SetActive(false);
         WriteBtn.gameObject.SetActive(true);
+
+        sendBtn.interactable = false;
     }
 
     private void ChangeToWrite()
@@ -76,6 +86,8 @@ public class UIManager : MonoBehaviour
 
         WriteBtn.gameObject.SetActive(false);
         speakBtn.gameObject.SetActive(true);
+
+        UpdateSendButtonState();
     }
 
     /// <summary>
@@ -99,21 +111,35 @@ public class UIManager : MonoBehaviour
     }
 
     /// <summary>
+    /// 输入框内容变化事件
+    /// </summary>
+    private void OnInputFieldValueChanged(string text)
+    {
+        UpdateSendButtonState();
+    }
+
+    /// <summary>
+    /// 更新发送按钮的可交互状态
+    /// </summary>
+    private void UpdateSendButtonState()
+    {
+        bool hasContent = !string.IsNullOrEmpty(inputField.text);
+        sendBtn.interactable = hasContent;
+    }
+
+    /// <summary>
     /// 发送消息到聊天界面
     /// </summary>
     private void SendMessage()
     {
-        // 获取输入框内容
-        string message = inputField.text.Trim();
+        string message = inputField.text;
 
-        // 检查消息是否为空
         if (string.IsNullOrEmpty(message))
         {
             Debug.LogWarning("消息内容为空，无法发送");
             return;
         }
 
-        // 检查ChatManager是否存在
         if (chatManager == null)
         {
             Debug.LogError("ChatManager未设置，无法发送消息");
@@ -123,6 +149,8 @@ public class UIManager : MonoBehaviour
         chatManager.AddSelfMessage(message);
 
         inputField.text = string.Empty;
+
+        UpdateSendButtonState();
 
         // 重新激活输入框焦点，方便继续输入
         inputField.ActivateInputField();
