@@ -1,0 +1,12 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Unity YAML files should always use LF
+*.meta text eol=lf
+*.prefab text eol=lf
+*.unity text eol=lf
+*.asset text eol=lf
+*.mat text eol=lf
+
+# Unity JSON settings should use LF
+ProjectSettings/**/*.json text eol=lf

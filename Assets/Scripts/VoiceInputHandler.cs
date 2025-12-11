@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using Whisper;
 
 public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IDragHandler
 {
@@ -15,25 +16,27 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
     [Header("聊天管理器")]
     [SerializeField] private ChatManager chatManager;
 
+    [Header("语音识别")]
+    [SerializeField] private WhisperManager whisperManager;
+
     private bool isRecording = false;
     private bool isCanceling = false;
     private RectTransform cancelAreaRect;
+    private AudioClip clip;
+    private int recordingPosition = 0;
 
     void Start()
     {
-        // 初始化隐藏面板
         if (voicePanel != null)
         {
             voicePanel.SetActive(false);
         }
 
-        // 获取取消区域组件
         if (cancelArea != null)
         {
             cancelAreaRect = cancelArea.GetComponent<RectTransform>();
         }
 
-        // 如果未设置ChatManager，尝试自动查找
         if (chatManager == null)
         {
             chatManager = FindObjectOfType<ChatManager>();
@@ -72,7 +75,6 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
             recordingText.text = "上滑，取消发送";
         }
 
-        // 开始音浪动画，隐藏 undo icon
         if (waveAnimation != null)
         {
             waveAnimation.StartAnimation();
@@ -90,34 +92,49 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
 
         Debug.Log("开始录音");
 
-        // TODO: 这里添加实际的录音启动代码
-        // 例如：Microphone.Start(null, false, 60, 44100);
+        if (Microphone.devices.Length == 0)
+        {
+            Debug.LogError("没有检测到麦克风设备!");
+            return;
+        }
+
+        Debug.Log($"使用麦克风: {Microphone.devices[0]}");
+        clip = Microphone.Start(null, false, 10, 16000);
+        Debug.Log("开始录音... (最长10秒)");
     }
 
     private void StopRecording()
     {
         if (!isRecording) return;
 
-        // 保存当前是否取消的状态
         bool shouldCancel = isCanceling;
 
-        // 重置状态
         isRecording = false;
         isCanceling = false;
 
-        // 停止音浪动画
         if (waveAnimation != null)
         {
             waveAnimation.StopAnimation();
         }
 
-        // 隐藏语音面板
         if (voicePanel != null)
         {
             voicePanel.SetActive(false);
         }
 
-        // 根据状态执行操作
+        Debug.Log("停止录音");
+
+        if (clip == null)
+        {
+            Debug.LogWarning("没有正在进行的录音!");
+            return;
+        }
+
+        recordingPosition = Microphone.GetPosition(null);
+
+        Microphone.End(null);
+        Debug.Log($"录音结束,音频长度: {clip.length}秒, 采样数: {clip.samples}, 实际录音位置: {recordingPosition}");
+
         if (shouldCancel)
         {
             CancelVoiceMessage();
@@ -126,21 +143,14 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
         {
             SendVoiceAsText();
         }
-
-        Debug.Log("停止录音");
-
-        // TODO: 这里添加实际的录音停止代码
-        // 例如：Microphone.End(null);
     }
 
     private void CheckPointerPosition(Vector2 position)
     {
         bool wasInCancelArea = isCanceling;
 
-        // 检查是否在取消区域
         isCanceling = IsPointerInArea(position, cancelAreaRect);
 
-        // 如果状态改变，更新UI
         if (isCanceling != wasInCancelArea)
         {
             UpdateRecordingText();
@@ -152,7 +162,6 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
     {
         if (areaRect == null) return false;
 
-        // 使用屏幕坐标判断
         return RectTransformUtility.RectangleContainsScreenPoint(
             areaRect,
             pointerPosition,
@@ -181,7 +190,6 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
     {
         if (isCanceling)
         {
-            // 在取消区域：隐藏整个音浪容器，显示 undo icon
             if (waveContainer != null)
             {
                 waveContainer.SetActive(false);
@@ -194,7 +202,6 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
         else
         {
-            // 不在取消区域：显示音浪容器，隐藏 undo icon
             if (waveContainer != null)
             {
                 waveContainer.SetActive(true);
@@ -207,21 +214,59 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
 
-    private void SendVoiceAsText()
+    private async void SendVoiceAsText()
     {
         Debug.Log("语音转文字并发送");
 
-        // TODO: 这里添加实际的语音转文字逻辑
-        // 例如：
-        // AudioClip clip = GetRecordedAudio();
-        // string text = ConvertSpeechToText(clip);
-
-        // 临时使用占位文本
-        string convertedText = "这是语音转换的文字";
-
-        if (chatManager != null)
+        if (clip == null)
         {
-            chatManager.AddSelfMessage(convertedText);
+            Debug.LogWarning("没有录音数据!");
+            return;
+        }
+
+        if (whisperManager == null)
+        {
+            Debug.LogError("WhisperManager未设置!");
+            return;
+        }
+
+        if (recordingPosition <= 0)
+        {
+            Debug.LogWarning("没有有效的录音数据!");
+            return;
+        }
+
+        // 只获取实际录音的部分
+        float[] allSamples = new float[clip.samples];
+        clip.GetData(allSamples, 0);
+
+        // 修剪音频数据，只保留实际录音的部分
+        float[] samples = new float[recordingPosition];
+        System.Array.Copy(allSamples, 0, samples, 0, recordingPosition);
+
+        Debug.Log($"实际录音样本数: {recordingPosition}, 总样本数: {clip.samples}");
+
+        if (!whisperManager.IsLoaded)
+        {
+            Debug.LogWarning("Whisper模型未加载,等待加载完成...");
+            await whisperManager.InitModel();
+        }
+
+        Debug.Log("正在识别语音...");
+        var result = await whisperManager.GetTextAsync(samples, 16000, 1);
+
+        if (result != null && !string.IsNullOrEmpty(result.Result))
+        {
+            Debug.Log($"<color=green>识别结果: {result.Result}</color>");
+
+            if (chatManager != null)
+            {
+                chatManager.AddSelfMessage(result.Result);
+            }
+        }
+        else
+        {
+            Debug.LogWarning("未识别到语音内容");
         }
     }
 
@@ -230,7 +275,10 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
     {
         Debug.Log("取消发送语音消息");
 
-        // TODO: 这里添加取消语音的逻辑
-        // 例如：清除录音缓存
+        if (clip != null)
+        {
+            Destroy(clip);
+            clip = null;
+        }
     }
 }
