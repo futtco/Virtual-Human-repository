@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections;
 using System.Collections.Generic;
 
 public class ChatManager : MonoBehaviour
@@ -8,6 +9,7 @@ public class ChatManager : MonoBehaviour
     [SerializeField] private Transform chatContainer;  // 聊天消息容器
     [SerializeField] private GameObject otherTalkPrefab;  // 对方消息预制体
     [SerializeField] private GameObject selfTalkPrefab;   // 自己消息预制体
+    [SerializeField] private ScrollRect scrollRect;  // ScrollView组件
 
     [Header("气泡框配置")]
     [SerializeField] private float minBubbleHeight = 50f;  // 气泡框最小高度
@@ -145,6 +147,9 @@ public class ChatManager : MonoBehaviour
 
         // 更新容器的高度
         UpdateContainerHeight();
+
+        // 自动滚动到底部
+        ScrollToBottom();
     }
 
     /// <summary>
@@ -164,6 +169,30 @@ public class ChatManager : MonoBehaviour
 
         // 设置容器高度
         containerRect.sizeDelta = new Vector2(containerRect.sizeDelta.x, totalHeight);
+    }
+
+    /// <summary>
+    /// 滚动到底部（显示最新消息）
+    /// </summary>
+    private void ScrollToBottom()
+    {
+        if (scrollRect != null)
+        {
+            // 使用协程延迟一帧执行，确保布局已经更新完成
+            StartCoroutine(ScrollToBottomCoroutine());
+        }
+    }
+
+    /// <summary>
+    /// 滚动到底部的协程
+    /// </summary>
+    private IEnumerator ScrollToBottomCoroutine()
+    {
+        // 等待一帧，确保布局更新完成
+        yield return null;
+
+        // 设置垂直滚动位置为0（底部）
+        scrollRect.verticalNormalizedPosition = 0f;
     }
 
     /// <summary>
