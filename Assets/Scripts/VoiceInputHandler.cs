@@ -12,6 +12,7 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
     [SerializeField] private VoiceWaveAnimation waveAnimation; // 音浪动画
     [SerializeField] private GameObject waveContainer;   // 音浪容器
     [SerializeField] private GameObject undoIcon;        // 取消图标
+    [SerializeField] private GameObject loadIcon;        // 加载图标
 
     [Header("聊天管理器")]
     [SerializeField] private ChatManager chatManager;
@@ -40,6 +41,12 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
         if (chatManager == null)
         {
             chatManager = FindObjectOfType<ChatManager>();
+        }
+
+        // 初始化时隐藏加载图标
+        if (loadIcon != null)
+        {
+            loadIcon.SetActive(false);
         }
     }
 
@@ -236,37 +243,54 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
             return;
         }
 
-        // 只获取实际录音的部分
-        float[] allSamples = new float[clip.samples];
-        clip.GetData(allSamples, 0);
-
-        // 修剪音频数据，只保留实际录音的部分
-        float[] samples = new float[recordingPosition];
-        System.Array.Copy(allSamples, 0, samples, 0, recordingPosition);
-
-        Debug.Log($"实际录音样本数: {recordingPosition}, 总样本数: {clip.samples}");
-
-        if (!whisperManager.IsLoaded)
+        // 显示加载图标
+        if (loadIcon != null)
         {
-            Debug.LogWarning("Whisper模型未加载,等待加载完成...");
-            await whisperManager.InitModel();
+            loadIcon.SetActive(true);
         }
 
-        Debug.Log("正在识别语音...");
-        var result = await whisperManager.GetTextAsync(samples, 16000, 1);
-
-        if (result != null && !string.IsNullOrEmpty(result.Result))
+        try
         {
-            Debug.Log($"<color=green>识别结果: {result.Result}</color>");
+            // 只获取实际录音的部分
+            float[] allSamples = new float[clip.samples];
+            clip.GetData(allSamples, 0);
 
-            if (chatManager != null)
+            // 修剪音频数据，只保留实际录音的部分
+            float[] samples = new float[recordingPosition];
+            System.Array.Copy(allSamples, 0, samples, 0, recordingPosition);
+
+            Debug.Log($"实际录音样本数: {recordingPosition}, 总样本数: {clip.samples}");
+
+            if (!whisperManager.IsLoaded)
             {
-                chatManager.AddSelfMessage(result.Result);
+                Debug.LogWarning("Whisper模型未加载,等待加载完成...");
+                await whisperManager.InitModel();
+            }
+
+            Debug.Log("正在识别语音...");
+            var result = await whisperManager.GetTextAsync(samples, 16000, 1);
+
+            if (result != null && !string.IsNullOrEmpty(result.Result))
+            {
+                Debug.Log($"<color=green>识别结果: {result.Result}</color>");
+
+                if (chatManager != null)
+                {
+                    chatManager.AddSelfMessage(result.Result);
+                }
+            }
+            else
+            {
+                Debug.LogWarning("未识别到语音内容");
             }
         }
-        else
+        finally
         {
-            Debug.LogWarning("未识别到语音内容");
+            // 无论成功还是失败，都隐藏加载图标
+            if (loadIcon != null)
+            {
+                loadIcon.SetActive(false);
+            }
         }
     }
 
