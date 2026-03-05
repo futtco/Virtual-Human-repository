@@ -30,7 +30,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+import json
+from flask.json.provider import DefaultJSONProvider
+
+# 自定义 JSON Provider 确保中文不被转义
+class ChineseJSONProvider(DefaultJSONProvider):
+    def dumps(self, obj, **kwargs):
+        kwargs.setdefault('ensure_ascii', False)
+        return super().dumps(obj, **kwargs)
+
+    def dump(self, obj, fp, **kwargs):
+        kwargs.setdefault('ensure_ascii', False)
+        return super().dump(obj, fp, **kwargs)
+
 app = Flask(__name__)
+app.json = ChineseJSONProvider(app)
 
 # ============ WebSocket 参数生成 ============
 class WsParam:
@@ -116,13 +130,27 @@ class ChatSession:
 
     def _trim_history(self) -> None:
         """裁剪对话历史，保持在 token 限制内"""
-        # 简单的启发式方法：如果消息太多，删除最早的用户-助手对
-        while len(self.messages) > 10:  # 保留最多 10 条消息
-            # 保留 system 消息
-            if self.messages[1]["role"] == "user":
-                del self.messages[1]
-                if len(self.messages) > 1 and self.messages[1]["role"] == "assistant":
+        # Spark Lite 最大 tokens 为 8192，但为了安全，限制在 6000 tokens 以内
+        # 简单估算：1 个中文字 ≈ 1.5 tokens，1 个英文单词 ≈ 1 token
+
+        max_tokens = 6000
+
+        while True:
+            # 计算当前总字符数（粗略估计 tokens）
+            total_chars = sum(len(msg.get("content", "")) for msg in self.messages)
+            estimated_tokens = int(total_chars * 1.2)  # 保守估计
+
+            if estimated_tokens <= max_tokens:
+                break
+
+            # 超过限制，删除最早的用户-助手对（保留 system）
+            if len(self.messages) > 2:
+                if self.messages[1]["role"] == "user":
                     del self.messages[1]
+                    if len(self.messages) > 1 and self.messages[1].get("role") == "assistant":
+                        del self.messages[1]
+                else:
+                    break  # 避免无限循环
             else:
                 break
 
