@@ -20,6 +20,9 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
     [Header("语音识别")]
     [SerializeField] private WhisperManager whisperManager;
 
+    [Header("AI管理器")]
+    [SerializeField] private AIManager aiManager;
+
     private bool isRecording = false;
     private bool isCanceling = false;
     private RectTransform cancelAreaRect;
@@ -41,6 +44,11 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
         if (chatManager == null)
         {
             chatManager = FindObjectOfType<ChatManager>();
+        }
+
+        if (aiManager == null)
+        {
+            aiManager = FindObjectOfType<AIManager>();
         }
 
         // 初始化时隐藏加载图标
@@ -277,6 +285,35 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
                 if (chatManager != null)
                 {
                     chatManager.AddSelfMessage(result.Result);
+                }
+
+                // ===== 调用AI获取回复 =====
+                if (aiManager != null)
+                {
+                    Debug.Log("正在调用AI获取回复...");
+                    aiManager.GetAIResponse(
+                        result.Result,
+                        onComplete: (aiResponse) =>
+                        {
+                            Debug.Log($"<color=cyan>AI回复: {aiResponse}</color>");
+                            if (chatManager != null)
+                            {
+                                chatManager.AddOtherMessage(aiResponse);
+                            }
+                        },
+                        onError: (error) =>
+                        {
+                            Debug.LogError($"AI调用失败: {error}");
+                            if (chatManager != null)
+                            {
+                                chatManager.AddOtherMessage($"抱歉，AI服务出错: {error}");
+                            }
+                        }
+                    );
+                }
+                else
+                {
+                    Debug.LogWarning("AIManager未找到，无法获取AI回复");
                 }
             }
             else

@@ -938,6 +938,55 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &761671905
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 761671906}
+  - component: {fileID: 761671907}
+  m_Layer: 0
+  m_Name: AIManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &761671906
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 761671905}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 834565132}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &761671907
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 761671905}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d753187ccc1a24df48d3b938df4f2841, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  appId: 015d7801
+  apiKey: d69d235ad78601c3b375024481b35572
+  apiSecret: OTEzYWE5MGlyY2Y4ZDlzY2M5OGI0NTg0
+  temperature: 0.7
+  maxTokens: 500
 --- !u!1 &834565131
 GameObject:
   m_ObjectHideFlags: 0
@@ -970,6 +1019,7 @@ Transform:
   - {fileID: 1393474169}
   - {fileID: 387125332}
   - {fileID: 2032977413}
+  - {fileID: 761671906}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &895822119
@@ -1905,6 +1955,7 @@ MonoBehaviour:
   loadIcon: {fileID: 548736931}
   chatManager: {fileID: 1393474170}
   whisperManager: {fileID: 387125333}
+  aiManager: {fileID: 761671907}
 --- !u!1 &1755765203
 GameObject:
   m_ObjectHideFlags: 0
@@ -2848,6 +2899,7 @@ MonoBehaviour:
   onSpeakBtn: {fileID: 1616250688}
   voiceArea: {fileID: 551847449}
   chatManager: {fileID: 1393474170}
+  aiManager: {fileID: 761671907}
 --- !u!1 &2074757108
 GameObject:
   m_ObjectHideFlags: 0

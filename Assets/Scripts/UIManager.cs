@@ -29,6 +29,10 @@ public class UIManager : MonoBehaviour
     [SerializeField]
     private ChatManager chatManager;
 
+    [Header("AI管理器")]
+    [SerializeField]
+    private AIManager aiManager;
+
     void Start()
     {
         InitializeUI();
@@ -42,6 +46,12 @@ public class UIManager : MonoBehaviour
             {
                 Debug.LogError("ChatManager未找到！请在Inspector中设置或确保场景中存在ChatManager");
             }
+        }
+
+        // 如果未设置AIManager，尝试自动查找
+        if (aiManager == null)
+        {
+            aiManager = FindObjectOfType<AIManager>();
         }
     }
 
@@ -156,5 +166,34 @@ public class UIManager : MonoBehaviour
         inputField.ActivateInputField();
 
         Debug.Log($"已发送消息: {message}");
+
+        // ===== 调用AI获取回复 =====
+        if (aiManager != null)
+        {
+            Debug.Log("正在调用AI获取回复...");
+            aiManager.GetAIResponse(
+                message,
+                onComplete: (aiResponse) =>
+                {
+                    Debug.Log($"<color=cyan>AI回复: {aiResponse}</color>");
+                    if (chatManager != null)
+                    {
+                        chatManager.AddOtherMessage(aiResponse);
+                    }
+                },
+                onError: (error) =>
+                {
+                    Debug.LogError($"AI调用失败: {error}");
+                    if (chatManager != null)
+                    {
+                        chatManager.AddOtherMessage($"抱歉，AI服务出错: {error}");
+                    }
+                }
+            );
+        }
+        else
+        {
+            Debug.LogWarning("AIManager未找到，无法获取AI回复");
+        }
     }
 }
