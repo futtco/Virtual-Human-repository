@@ -33,6 +33,10 @@ public class UIManager : MonoBehaviour
     [SerializeField]
     private AIManager aiManager;
 
+    [Header("虚拟人控制")]
+    [SerializeField]
+    private VirtualHumanController virtualHumanController;
+
     void Start()
     {
         InitializeUI();
@@ -52,6 +56,12 @@ public class UIManager : MonoBehaviour
         if (aiManager == null)
         {
             aiManager = FindObjectOfType<AIManager>();
+        }
+
+        // 如果未设置VirtualHumanController，尝试自动查找
+        if (virtualHumanController == null)
+        {
+            virtualHumanController = FindObjectOfType<VirtualHumanController>();
         }
     }
 
@@ -150,16 +160,7 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        if (chatManager == null)
-        {
-            Debug.LogError("ChatManager未设置，无法发送消息");
-            return;
-        }
-
-        chatManager.AddSelfMessage(message);
-
         inputField.text = string.Empty;
-
         UpdateSendButtonState();
 
         // 重新激活输入框焦点，方便继续输入
@@ -167,33 +168,50 @@ public class UIManager : MonoBehaviour
 
         Debug.Log($"已发送消息: {message}");
 
-        // ===== 调用AI获取回复 =====
-        if (aiManager != null)
+        // ===== 使用虚拟人控制器处理消息 =====
+        if (virtualHumanController != null)
         {
-            Debug.Log("正在调用AI获取回复...");
-            aiManager.GetAIResponse(
-                message,
-                onComplete: (aiResponse) =>
-                {
-                    Debug.Log($"<color=cyan>AI回复: {aiResponse}</color>");
-                    if (chatManager != null)
-                    {
-                        chatManager.AddOtherMessage(aiResponse);
-                    }
-                },
-                onError: (error) =>
-                {
-                    Debug.LogError($"AI调用失败: {error}");
-                    if (chatManager != null)
-                    {
-                        chatManager.AddOtherMessage($"抱歉，AI服务出错: {error}");
-                    }
-                }
-            );
+            // 使用虚拟人控制器 - 完整流程：显示消息 -> AI回复 -> 语音生成 -> 表情和口型
+            virtualHumanController.HandleUserMessage(message);
         }
         else
         {
-            Debug.LogWarning("AIManager未找到，无法获取AI回复");
+            // Fallback: 如果没有虚拟人控制器，使用原来的方式
+            if (chatManager == null)
+            {
+                Debug.LogError("ChatManager未设置，无法发送消息");
+                return;
+            }
+
+            chatManager.AddSelfMessage(message);
+
+            if (aiManager != null)
+            {
+                Debug.Log("正在调用AI获取回复...");
+                aiManager.GetAIResponse(
+                    message,
+                    onComplete: (aiResponse) =>
+                    {
+                        Debug.Log($"<color=cyan>AI回复: {aiResponse}</color>");
+                        if (chatManager != null)
+                        {
+                            chatManager.AddOtherMessage(aiResponse);
+                        }
+                    },
+                    onError: (error) =>
+                    {
+                        Debug.LogError($"AI调用失败: {error}");
+                        if (chatManager != null)
+                        {
+                            chatManager.AddOtherMessage($"抱歉，AI服务出错: {error}");
+                        }
+                    }
+                );
+            }
+            else
+            {
+                Debug.LogWarning("AIManager未找到，无法获取AI回复");
+            }
         }
     }
 }

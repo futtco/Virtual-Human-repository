@@ -6,7 +6,7 @@ using System.Collections.Generic;
 public class AIManager : MonoBehaviour
 {
     [Header("讯飞星火配置")]
-    [SerializeField] private string localServiceUrl = "http://127.0.0.1:5000";
+    [SerializeField] private string localServiceUrl = "http://127.0.0.1:8000";
     [SerializeField] private string sessionId = "default";
 
     private bool isWaitingForResponse = false;
@@ -36,7 +36,6 @@ public class AIManager : MonoBehaviour
     private IEnumerator RequestAIResponse(string userMessage, System.Action<string> onComplete, System.Action<string> onError)
     {
         isWaitingForResponse = true;
-        Debug.Log($"[AI] 用户: {userMessage}");
 
         // 构建请求
         var requestData = new ChatRequest
@@ -46,7 +45,6 @@ public class AIManager : MonoBehaviour
         };
 
         string jsonBody = JsonUtility.ToJson(requestData);
-        Debug.Log($"[AI] 请求: {jsonBody}");
 
         using (UnityWebRequest request = new UnityWebRequest($"{localServiceUrl}/chat", "POST"))
         {
@@ -56,7 +54,6 @@ public class AIManager : MonoBehaviour
 
             request.SetRequestHeader("Content-Type", "application/json");
 
-            Debug.Log($"[AI] 发送请求到: {localServiceUrl}/chat");
             yield return request.SendWebRequest();
 
             isWaitingForResponse = false;
@@ -66,30 +63,27 @@ public class AIManager : MonoBehaviour
                 try
                 {
                     string responseText = request.downloadHandler.text;
-                    Debug.Log($"[AI] 响应: {responseText}");
-
                     var response = JsonUtility.FromJson<ChatResponse>(responseText);
 
                     if (response.success && !string.IsNullOrEmpty(response.response))
                     {
-                        Debug.Log($"[AI] 助手: {response.response}");
                         onComplete?.Invoke(response.response);
                     }
                     else
                     {
-                        Debug.LogError($"[AI] 错误: {response.error}");
+                        Debug.LogError($"AI 错误: {response.error}");
                         onError?.Invoke(response.error ?? "获取回复失败");
                     }
                 }
                 catch (System.Exception e)
                 {
-                    Debug.LogError($"[AI] 解析响应失败: {e.Message}");
+                    Debug.LogError($"解析 AI 响应失败: {e.Message}");
                     onError?.Invoke($"解析响应失败: {e.Message}");
                 }
             }
             else
             {
-                Debug.LogError($"[AI] 请求失败 ({request.responseCode}): {request.error}");
+                Debug.LogError($"AI 请求失败 ({request.responseCode}): {request.error}");
                 string errorMsg = request.downloadHandler?.text ?? request.error;
                 onError?.Invoke($"请求失败: {errorMsg}");
             }

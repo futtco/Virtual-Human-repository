@@ -23,6 +23,9 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
     [Header("AI管理器")]
     [SerializeField] private AIManager aiManager;
 
+    [Header("虚拟人控制")]
+    [SerializeField] private VirtualHumanController virtualHumanController;
+
     private bool isRecording = false;
     private bool isCanceling = false;
     private RectTransform cancelAreaRect;
@@ -49,6 +52,11 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
         if (aiManager == null)
         {
             aiManager = FindObjectOfType<AIManager>();
+        }
+
+        if (virtualHumanController == null)
+        {
+            virtualHumanController = FindObjectOfType<VirtualHumanController>();
         }
 
         // 初始化时隐藏加载图标
@@ -282,38 +290,42 @@ public class VoiceInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpH
             {
                 Debug.Log($"<color=green>识别结果: {result.Result}</color>");
 
-                if (chatManager != null)
+                // ===== 使用虚拟人控制器处理消息 =====
+                if (virtualHumanController != null)
                 {
-                    chatManager.AddSelfMessage(result.Result);
-                }
-
-                // ===== 调用AI获取回复 =====
-                if (aiManager != null)
-                {
-                    Debug.Log("正在调用AI获取回复...");
-                    aiManager.GetAIResponse(
-                        result.Result,
-                        onComplete: (aiResponse) =>
-                        {
-                            Debug.Log($"<color=cyan>AI回复: {aiResponse}</color>");
-                            if (chatManager != null)
-                            {
-                                chatManager.AddOtherMessage(aiResponse);
-                            }
-                        },
-                        onError: (error) =>
-                        {
-                            Debug.LogError($"AI调用失败: {error}");
-                            if (chatManager != null)
-                            {
-                                chatManager.AddOtherMessage($"抱歉，AI服务出错: {error}");
-                            }
-                        }
-                    );
+                    virtualHumanController.HandleUserMessage(result.Result);
                 }
                 else
                 {
-                    Debug.LogWarning("AIManager未找到，无法获取AI回复");
+                    // Fallback: 如果没有虚拟人控制器，直接调用AI
+                    if (chatManager != null)
+                    {
+                        chatManager.AddSelfMessage(result.Result);
+                    }
+
+                    if (aiManager != null)
+                    {
+                        Debug.Log("正在调用AI获取回复...");
+                        aiManager.GetAIResponse(
+                            result.Result,
+                            onComplete: (aiResponse) =>
+                            {
+                                Debug.Log($"<color=cyan>AI回复: {aiResponse}</color>");
+                                if (chatManager != null)
+                                {
+                                    chatManager.AddOtherMessage(aiResponse);
+                                }
+                            },
+                            onError: (error) =>
+                            {
+                                Debug.LogError($"AI调用失败: {error}");
+                                if (chatManager != null)
+                                {
+                                    chatManager.AddOtherMessage($"抱歉，AI服务出错: {error}");
+                                }
+                            }
+                        );
+                    }
                 }
             }
             else

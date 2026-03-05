@@ -1,5 +1,14 @@
 {
   "dependencies": {
+    "com.hecomi.ulipsync": {
+      "version": "file:../Assets/uLipSync",
+      "depth": 0,
+      "source": "local",
+      "dependencies": {
+        "com.unity.burst": "1.4.11",
+        "com.unity.mathematics": "1.2.5"
+      }
+    },
     "com.unity.2d.sprite": {
       "version": "1.0.0",
       "depth": 0,
