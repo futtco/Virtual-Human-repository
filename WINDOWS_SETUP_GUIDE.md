@@ -182,6 +182,74 @@ curl -X POST http://127.0.0.1:8000/clear_history ^
   -d "{\"session_id\": \"test\"}"
 ```
 
+## ⚙️ Windows 特殊处理
+
+### 1. Python 虚拟环境（推荐）
+
+为了避免全局包污染和版本冲突，建议使用虚拟环境：
+
+```bash
+# 创建虚拟环境
+python -m venv venv
+
+# 激活虚拟环境
+venv\Scripts\activate
+
+# 之后再安装依赖
+pip install flask requests pydub websocket-client edge-tts
+```
+
+激活后，命令行提示符前面会显示 `(venv)`。
+
+### 2. FFmpeg 路径显式指定
+
+如果 pydub 找不到 FFmpeg（即使已添加到 PATH），需要在 `xunfei_tts_service.py` 中显式指定：
+
+在文件顶部的导入部分后添加：
+
+```python
+import os
+from pydub import AudioSegment
+
+# Windows 上显式指定 FFmpeg 路径
+if os.name == 'nt':  # Windows
+    AudioSegment.converter = r"C:\ffmpeg\bin\ffmpeg.exe"
+    AudioSegment.ffprobe = r"C:\ffmpeg\bin\ffprobe.exe"
+```
+
+如果 FFmpeg 安装在不同位置，修改路径即可。
+
+### 3. 临时文件路径
+
+Unity 在 Windows 上的临时文件目录为：`C:\Users\<username>\AppData\LocalLow\<company>\<product>\`
+
+如果临时音频文件写入失败，可以：
+
+1. 检查 `VirtualHumanController.cs` 中的 `Application.persistentDataPath`
+2. 或者修改为项目内的相对路径（例如 `StreamingAssets/temp/`）
+
+### 4. 查看端口占用
+
+如果遇到"端口 8000 已被占用"，使用以下命令查看：
+
+```bash
+# 查看占用 8000 端口的进程
+netstat -ano | findstr :8000
+
+# 如果需要强制关闭进程（替换 PID）
+taskkill /PID <PID> /F
+```
+
+### 5. 行尾符号（CRLF vs LF）
+
+Git 会自动处理行尾符号，但如果出现问题：
+
+```bash
+# 重新标准化行尾符号
+git add --renormalize .
+git commit -m "Normalize line endings"
+```
+
 ## 🐛 故障排查
 
 ### 问题 1：Python 命令找不到
@@ -266,6 +334,44 @@ app.run(host='127.0.0.1', port=8001, debug=False)
 2. 检查音量设置（Windows 音量、Unity 音量）
 3. 确保 uLipSync 已正确安装
 4. 检查 LipSyncManager 是否正确关联
+
+### 问题 8：pydub 找不到 FFmpeg
+
+**症状：** `pydub.exceptions.CouldntDecodeError` 或 `Couldn't find ffmpeg`
+
+**解决方案：**
+
+虽然已将 FFmpeg 添加到 PATH，但 pydub 有时仍无法找到。修改 `xunfei_tts_service.py`：
+
+```python
+import os
+from pydub import AudioSegment
+
+# 在 if __name__ == '__main__': 之前添加
+if os.name == 'nt':  # Windows 系统
+    ffmpeg_path = r"C:\ffmpeg\bin\ffmpeg.exe"
+    if os.path.exists(ffmpeg_path):
+        AudioSegment.converter = ffmpeg_path
+```
+
+替换路径为你的 FFmpeg 实际安装位置。
+
+### 问题 9：临时音频文件保存失败
+
+**症状：** `PermissionError` 或 "保存音频失败"
+
+**解决方案：**
+
+1. 检查 `Application.persistentDataPath` 目录是否存在和可写
+2. 在 `VirtualHumanController.cs` 中修改临时文件路径为项目内目录：
+
+```csharp
+// 原来：
+string tempAudioPath = System.IO.Path.Combine(Application.persistentDataPath, "temp_speech.wav");
+
+// 改为（确保 Assets/StreamingAssets/temp 目录已存在）：
+string tempAudioPath = System.IO.Path.Combine(Application.streamingAssetsPath, "temp", "temp_speech.wav");
+```
 
 ## 📁 项目文件结构
 
