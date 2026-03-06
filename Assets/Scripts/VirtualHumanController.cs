@@ -81,8 +81,8 @@ public class VirtualHumanController : MonoBehaviour
         // 获取AI回复
         if (aiManager != null)
         {
-            // 显示思考表情
-            if (autoExpression && expressionController != null)
+            // 显示思考表情（brief thinking expression）
+            if (expressionController != null)
             {
                 expressionController.PlayEmotionSequence(ExpressionPreset.neutral, thinkingDuration);
             }
@@ -149,17 +149,11 @@ public class VirtualHumanController : MonoBehaviour
     {
         Debug.Log($"虚拟人说话: {message}");
 
-        // 显示说话表情
-        if (autoExpression && expressionController != null)
-        {
-            expressionController.SetExpression(ExpressionPreset.happy);
-        }
-
-        // 生成语音
+        // 生成语音（说话时保持neutral表情，让口型动画自然显示）
         yield return StartCoroutine(GenerateAndPlaySpeech(message));
 
-        // 恢复中性表情
-        if (autoExpression && expressionController != null)
+        // 说完了，回到neutral表情并关闭嘴巴
+        if (expressionController != null)
         {
             expressionController.ResetExpression();
         }

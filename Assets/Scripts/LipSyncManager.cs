@@ -2,6 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// uLipSync管理器 - 处理实时音频口型同步
+/// 重点：必须在Scene中正确配置uLipSync组件，本Manager只负责播放控制
 /// </summary>
 public class LipSyncManager : MonoBehaviour
 {
@@ -38,6 +39,40 @@ public class LipSyncManager : MonoBehaviour
             return;
         }
 
+        // 确保uLipSync已启用
+        if (!lipSyncComponent.enabled)
+        {
+            lipSyncComponent.enabled = true;
+            Debug.Log("✓ uLipSync已启用");
+        }
+
+        // 尝试设置audioSource到uLipSync
+        try
+        {
+            var audioSourceField = lipSyncComponent.GetType().GetField("audioSource",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            if (audioSourceField != null)
+            {
+                audioSourceField.SetValue(lipSyncComponent, audioSource);
+                Debug.Log("✓ uLipSync AudioSource已配置 (通过反射)");
+            }
+            else
+            {
+                // 尝试属性
+                var audioSourceProp = lipSyncComponent.GetType().GetProperty("audioSource");
+                if (audioSourceProp != null && audioSourceProp.CanWrite)
+                {
+                    audioSourceProp.SetValue(lipSyncComponent, audioSource);
+                    Debug.Log("✓ uLipSync AudioSource已配置 (通过属性)");
+                }
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"配置uLipSync AudioSource失败: {e.Message}");
+        }
+
         Debug.Log("✓ 口型同步管理器已初始化");
     }
 
@@ -48,14 +83,26 @@ public class LipSyncManager : MonoBehaviour
     {
         if (audioSource == null || lipSyncComponent == null)
         {
-            Debug.LogError("无法进行口型同步: 缺少音频源或同步上下文");
+            Debug.LogError("无法进行口型同步: 缺少音频源或同步组件");
             return;
         }
 
+        // 确保uLipSync处于启用状态
+        if (!lipSyncComponent.enabled)
+        {
+            lipSyncComponent.enabled = true;
+        }
+
+        // 停止当前音频
+        audioSource.Stop();
+
+        // 设置新的音频片段
         audioSource.clip = clip;
+
+        // 播放音频（uLipSync会自动通过AudioSource监听）
         audioSource.Play();
 
-        Debug.Log($"播放音频并进行口型同步: {clip.name}");
+        Debug.Log($"播放音频并进行口型同步: {clip.name} (长度: {clip.length:F2}s)");
     }
 
     /// <summary>
@@ -92,34 +139,6 @@ public class LipSyncManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 获取当前音素信息 (通过反射)
-    /// </summary>
-    public object GetCurrentLipSyncInfo()
-    {
-        if (lipSyncComponent == null)
-        {
-            return null;
-        }
-
-        try
-        {
-            var method = lipSyncComponent.GetType().GetMethod("GetLipSyncInfo",
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
-            if (method != null)
-            {
-                return method.Invoke(lipSyncComponent, null);
-            }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"获取口型信息失败: {e.Message}");
-        }
-
-        return null;
-    }
-
-    /// <summary>
     /// 检查音频是否正在播放
     /// </summary>
     public bool IsAudioPlaying => audioSource != null && audioSource.isPlaying;
@@ -133,11 +152,11 @@ public class LipSyncManager : MonoBehaviour
 
         if (lipSyncComponent != null)
         {
-            GUILayout.Label("口型同步: 已连接");
+            GUILayout.Label($"口型同步: {(lipSyncComponent.enabled ? "已连接" : "已禁用")}");
         }
         else
         {
-            GUILayout.Label("口型同步: 未连接");
+            GUILayout.Label("口型同步: 未找到");
         }
 
         if (audioSource != null)

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UniVRM10;
+using uLipSync;
 
 /// <summary>
 /// VRM表情和口型动画控制器
@@ -11,7 +12,7 @@ public class VRMExpressionController : MonoBehaviour
     [SerializeField] private Vrm10Instance vrm;
 
     [Header("口型同步")]
-    [SerializeField] private uLipSync.uLipSync lipSync;  // uLipSync.uLipSync
+    [SerializeField] private uLipSync.uLipSync lipSync;
 
     [Header("表情配置")]
     [SerializeField] private float expressionBlendSpeed = 0.5f;  // 表情切换速度
@@ -21,7 +22,6 @@ public class VRMExpressionController : MonoBehaviour
     private string previousExpressionName = null;
     private float targetExpressionWeight;
     private float currentExpressionWeight;
-    private System.Delegate onLipSyncUpdateDelegate;
 
     void Start()
     {
@@ -46,26 +46,20 @@ public class VRMExpressionController : MonoBehaviour
 
         if (lipSync != null)
         {
-            // 通过反射配置uLipSync回调
+            if (!lipSync.enabled)
+            {
+                lipSync.enabled = true;
+            }
+
+            // 订阅uLipSync事件
             try
             {
-                var eventInfo = lipSync.GetType().GetEvent("OnLipSyncUpdate");
-                if (eventInfo != null)
-                {
-                    var method = typeof(VRMExpressionController).GetMethod("OnLipSyncUpdate",
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-                    if (method != null)
-                    {
-                        onLipSyncUpdateDelegate = System.Delegate.CreateDelegate(eventInfo.EventHandlerType, this, method);
-                        eventInfo.AddEventHandler(lipSync, onLipSyncUpdateDelegate);
-                        Debug.Log("✓ 口型同步已初始化");
-                    }
-                }
+                lipSync.onLipSyncUpdate.AddListener(OnLipSyncUpdate);
+                Debug.Log("✓ 口型同步事件已订阅");
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"配置口型同步回调失败: {e.Message}");
+                Debug.LogWarning($"订阅uLipSync事件失败: {e.Message}");
             }
         }
         else
@@ -135,54 +129,33 @@ public class VRMExpressionController : MonoBehaviour
     public void ResetExpression()
     {
         SetExpression(ExpressionPreset.neutral);
+        // 同时关闭嘴巴
+        SetMouthOpen(0f);
     }
 
     /// <summary>
-    /// uLipSync更新回调 (通过反射调用)
+    /// uLipSync的回调方法 - uLipSync会自动调用这个方法
+    /// 方法名必须是 OnLipSyncUpdate，参数必须是 LipSyncInfo
     /// </summary>
-    private void OnLipSyncUpdate(object lipSyncInfo)
+    public void OnLipSyncUpdate(LipSyncInfo info)
     {
-        if (expressionManager == null || lipSyncInfo == null) return;
+        if (expressionManager == null) return;
 
-        try
+        if (info.volume < Mathf.Epsilon) return;  // 音量太小，忽略
+
+        // 根据音素设置口型
+        // info.phoneme 是字符串：A, I, U, E, O
+        float targetMouthOpen = info.phoneme switch
         {
-            // 通过反射获取 phoneme 字段
-            var phonemeField = lipSyncInfo.GetType().GetField("phoneme");
-            if (phonemeField == null) return;
+            "A" => 1.0f,      // A - 张口
+            "I" => 0.3f,
+            "U" => 0.2f,
+            "E" => 0.4f,
+            "O" => 0.8f,      // O - 张口
+            _ => 0.0f
+        };
 
-            var phonemeValue = phonemeField.GetValue(lipSyncInfo);
-
-            // 根据音素设置口型
-            // uLipSync 的 Phoneme 是枚举：A=0, I=1, U=2, E=3, O=4
-            if (phonemeValue is int phoneInt)
-            {
-                switch (phoneInt)
-                {
-                    case 0:  // A - 张口
-                        SetMouthOpen(1.0f);
-                        break;
-                    case 1:  // I
-                        SetMouthOpen(0.3f);
-                        break;
-                    case 2:  // U
-                        SetMouthOpen(0.2f);
-                        break;
-                    case 3:  // E
-                        SetMouthOpen(0.4f);
-                        break;
-                    case 4:  // O - 张口
-                        SetMouthOpen(0.8f);
-                        break;
-                    default:
-                        SetMouthOpen(0.0f);
-                        break;
-                }
-            }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"处理口型同步信息失败: {e.Message}");
-        }
+        SetMouthOpen(targetMouthOpen);
     }
 
     /// <summary>
@@ -198,7 +171,9 @@ public class VRMExpressionController : MonoBehaviour
             if (setWeightMethod != null)
             {
                 // 使用 "aa" (张口) 表情来控制嘴巴开度
-                setWeightMethod.Invoke(expressionManager, new object[] { "aa", openAmount });
+                // aa是VRM10的标准口型表情预设
+                var aaKey = ExpressionKey.CreateFromPreset(ExpressionPreset.aa);
+                setWeightMethod.Invoke(expressionManager, new object[] { aaKey, openAmount });
             }
         }
         catch (System.Exception e)
@@ -285,19 +260,17 @@ public class VRMExpressionController : MonoBehaviour
 
     void OnDestroy()
     {
-        if (lipSync != null && onLipSyncUpdateDelegate != null)
+        // 取消订阅事件
+        if (lipSync != null)
         {
             try
             {
-                var eventInfo = lipSync.GetType().GetEvent("OnLipSyncUpdate");
-                if (eventInfo != null)
-                {
-                    eventInfo.RemoveEventHandler(lipSync, onLipSyncUpdateDelegate);
-                }
+                lipSync.onLipSyncUpdate.RemoveListener(OnLipSyncUpdate);
+                Debug.Log("✓ 口型同步事件已取消订阅");
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"移除口型同步回调失败: {e.Message}");
+                Debug.LogWarning($"取消订阅uLipSync事件失败: {e.Message}");
             }
         }
     }
