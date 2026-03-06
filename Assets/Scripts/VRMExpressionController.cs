@@ -18,7 +18,21 @@ public class VRMExpressionController : MonoBehaviour
     [SerializeField] private float emotionBlendSpeed = 2.0f;    // 情感表情切换速度（慢）
     [SerializeField] private float mouthBlendSpeed = 8.0f;      // 口型变化速度（快）
 
+    [Header("口型映射调试")]
+    [SerializeField] private float phoneme_A_Weight = 1.0f;     // A/啊
+    [SerializeField] private float phoneme_I_Weight = 0.3f;     // I/衣
+    [SerializeField] private float phoneme_U_Weight = 0.6f;     // U/乌
+    [SerializeField] private float phoneme_E_Weight = 0.5f;     // E/呃
+    [SerializeField] private float phoneme_O_Weight = 0.8f;     // O/哦
+
+    [Header("表情时长控制")]
+    [SerializeField] private float emotionDisplayDuration = 2.0f;  // 表情播放时长（秒）
+    [SerializeField] private float emotionFadeDuration = 1.0f;     // 表情淡出时长（秒）
+
     private object expressionManager;  // Vrm10ExpressionManager
+
+    // 表情时长控制
+    private float emotionDisplayTimer = 0f;      // 已经显示的时长
 
     // 情感层（neutral, happy, sad, surprised, angry）
     private string currentExpressionName = "neutral";
@@ -180,15 +194,15 @@ public class VRMExpressionController : MonoBehaviour
             return;
         }
 
-        // 根据音素设置口型权重
+        // 根据音素设置口型权重（使用Inspector中可配置的值）
         // info.phoneme 是字符串：A, I, U, E, O
         targetMouthWeight = info.phoneme switch
         {
-            "A" => 1.0f,      // A - 张口
-            "I" => 0.3f,
-            "U" => 0.2f,
-            "E" => 0.4f,
-            "O" => 0.8f,      // O - 张口
+            "A" => phoneme_A_Weight,
+            "I" => phoneme_I_Weight,
+            "U" => phoneme_U_Weight,
+            "E" => phoneme_E_Weight,
+            "O" => phoneme_O_Weight,
             _ => 0.0f
         };
     }
@@ -199,9 +213,14 @@ public class VRMExpressionController : MonoBehaviour
     public void SetMouthActive(bool active)
     {
         isMouthActive = active;
-        if (!active)
+        if (active)
+        {
+            emotionDisplayTimer = 0f;  // 重置表情时长计时器
+        }
+        else
         {
             targetMouthWeight = 0f;  // 触发平滑关闭
+            emotionDisplayTimer = 0f;  // 停止说话时重置计时器
         }
     }
 
@@ -274,6 +293,26 @@ public class VRMExpressionController : MonoBehaviour
                 thinkingTime += Time.deltaTime;
                 float subtleWave = 0.08f * Mathf.Sin(thinkingTime * 0.8f);
                 emotionWeightWithThinking = Mathf.Clamp01(currentExpressionWeight + subtleWave);
+            }
+
+            // 表情时长控制：表情只显示2秒，然后平滑淡出
+            if (isMouthActive)
+            {
+                emotionDisplayTimer += Time.deltaTime;
+
+                // 判断是否进入淡出阶段
+                if (emotionDisplayTimer > emotionDisplayDuration)
+                {
+                    // 淡出时长内平滑降低权重
+                    float fadeElapsedTime = emotionDisplayTimer - emotionDisplayDuration;
+                    float fadeFraction = Mathf.Clamp01(fadeElapsedTime / emotionFadeDuration);
+                    emotionWeightWithThinking *= (1f - fadeFraction);
+                }
+            }
+            else
+            {
+                // 停止说话时重置计时器
+                emotionDisplayTimer = 0f;
             }
 
             // 设置当前情感表情
