@@ -15,13 +15,25 @@ public class VRMExpressionController : MonoBehaviour
     [SerializeField] private uLipSync.uLipSync lipSync;
 
     [Header("表情配置")]
-    [SerializeField] private float expressionBlendSpeed = 0.5f;  // 表情切换速度
+    [SerializeField] private float emotionBlendSpeed = 2.0f;    // 情感表情切换速度（慢）
+    [SerializeField] private float mouthBlendSpeed = 8.0f;      // 口型变化速度（快）
 
     private object expressionManager;  // Vrm10ExpressionManager
+
+    // 情感层（neutral, happy, sad, surprised, angry）
     private string currentExpressionName = "neutral";
     private string previousExpressionName = null;
-    private float targetExpressionWeight;
-    private float currentExpressionWeight;
+    private float targetExpressionWeight = 1.0f;
+    private float currentExpressionWeight = 1.0f;
+
+    // 口型层（aa 独立管理）
+    private bool isMouthActive = false;
+    private float targetMouthWeight = 0.0f;
+    private float currentMouthWeight = 0.0f;
+
+    // 思考动画
+    private bool isThinking = false;
+    private float thinkingTime = 0f;
 
     void Start()
     {
@@ -79,9 +91,28 @@ public class VRMExpressionController : MonoBehaviour
     {
         if (expressionManager == null) return;
 
-        currentExpressionName = preset.ToString().ToLower();
-        targetExpressionWeight = 1.0f;
-        Debug.Log($"设置表情: {preset}");
+        string newExpressionName = preset.ToString().ToLower();
+
+        // 如果表情改变或首次初始化
+        if (newExpressionName != currentExpressionName)
+        {
+            previousExpressionName = currentExpressionName;
+            currentExpressionName = newExpressionName;
+
+            // 如果之前有表情，重置currentWeight从0开始Lerp
+            // 否则直接设置为目标值（首次初始化）
+            if (!string.IsNullOrEmpty(previousExpressionName) && previousExpressionName != "neutral")
+            {
+                currentExpressionWeight = 0f;  // 从新表情淡入
+            }
+            else
+            {
+                currentExpressionWeight = 1.0f;  // 首次或从neutral，直接设置
+            }
+
+            targetExpressionWeight = 1.0f;
+            Debug.Log($"设置表情: {preset} (from {previousExpressionName}, weight:{currentExpressionWeight}→1.0)");
+        }
     }
 
     /// <summary>
@@ -124,28 +155,34 @@ public class VRMExpressionController : MonoBehaviour
     }
 
     /// <summary>
-    /// 重置表情到中性
+    /// 重置表情到中性（平滑淡出，不立即归零）
     /// </summary>
     public void ResetExpression()
     {
         SetExpression(ExpressionPreset.neutral);
-        // 同时关闭嘴巴
-        SetMouthOpen(0f);
+        // 不立即关闭嘴巴，而是触发平滑淡出（targetMouthWeight = 0）
+        SetMouthActive(false);
     }
 
     /// <summary>
     /// uLipSync的回调方法 - uLipSync会自动调用这个方法
     /// 方法名必须是 OnLipSyncUpdate，参数必须是 LipSyncInfo
+    /// 只在 isMouthActive=true 时才更新口型
     /// </summary>
     public void OnLipSyncUpdate(LipSyncInfo info)
     {
-        if (expressionManager == null) return;
+        // 关键：只有口型层激活时才响应uLipSync
+        if (!isMouthActive) return;
 
-        if (info.volume < Mathf.Epsilon) return;  // 音量太小，忽略
+        if (info.volume < Mathf.Epsilon)
+        {
+            targetMouthWeight = 0f;
+            return;
+        }
 
-        // 根据音素设置口型
+        // 根据音素设置口型权重
         // info.phoneme 是字符串：A, I, U, E, O
-        float targetMouthOpen = info.phoneme switch
+        targetMouthWeight = info.phoneme switch
         {
             "A" => 1.0f,      // A - 张口
             "I" => 0.3f,
@@ -154,36 +191,44 @@ public class VRMExpressionController : MonoBehaviour
             "O" => 0.8f,      // O - 张口
             _ => 0.0f
         };
-
-        SetMouthOpen(targetMouthOpen);
     }
 
     /// <summary>
-    /// 设置嘴巴开度
+    /// 激活/停止口型层
     /// </summary>
-    private void SetMouthOpen(float openAmount)
+    public void SetMouthActive(bool active)
     {
-        if (expressionManager == null) return;
-
-        try
+        isMouthActive = active;
+        if (!active)
         {
-            var setWeightMethod = expressionManager.GetType().GetMethod("SetWeight");
-            if (setWeightMethod != null)
-            {
-                // 使用 "aa" (张口) 表情来控制嘴巴开度
-                // aa是VRM10的标准口型表情预设
-                var aaKey = ExpressionKey.CreateFromPreset(ExpressionPreset.aa);
-                setWeightMethod.Invoke(expressionManager, new object[] { aaKey, openAmount });
-            }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"设置嘴巴开度失败: {e.Message}");
+            targetMouthWeight = 0f;  // 触发平滑关闭
         }
     }
 
     /// <summary>
-    /// 播放情感表情动画序列
+    /// 启动思考idle动画 - 持续轻微波动
+    /// </summary>
+    public void StartThinkingAnimation()
+    {
+        isThinking = true;
+        thinkingTime = 0f;
+        // 确保当前表情是neutral
+        SetExpression(ExpressionPreset.neutral);
+        Debug.Log("✓ 思考动画已启动");
+    }
+
+    /// <summary>
+    /// 停止思考idle动画
+    /// </summary>
+    public void StopThinkingAnimation()
+    {
+        isThinking = false;
+        thinkingTime = 0f;
+        Debug.Log("✓ 思考动画已停止");
+    }
+
+    /// <summary>
+    /// 播放情感表情动画序列（保留以兼容）
     /// </summary>
     public void PlayEmotionSequence(ExpressionPreset expression, float duration = 2f)
     {
@@ -207,42 +252,92 @@ public class VRMExpressionController : MonoBehaviour
 
     void Update()
     {
-        // 平滑切换表情权重
-        if (expressionManager != null && !string.IsNullOrEmpty(currentExpressionName))
+        if (expressionManager == null) return;
+
+        try
         {
+            var setWeightMethod = expressionManager.GetType().GetMethod("SetWeight");
+            if (setWeightMethod == null) return;
+
+            // ===== 情感层：独立渲染 =====
+            // 情感层平滑Lerp（速度慢，emotionBlendSpeed）
             currentExpressionWeight = Mathf.Lerp(
                 currentExpressionWeight,
                 targetExpressionWeight,
-                Time.deltaTime * expressionBlendSpeed
+                Time.deltaTime * emotionBlendSpeed
             );
 
-            try
+            // 思考动画的微妙波动：叠加在情感权重上
+            float emotionWeightWithThinking = currentExpressionWeight;
+            if (isThinking && currentExpressionName.ToLower() == "neutral")
             {
-                var setWeightMethod = expressionManager.GetType().GetMethod("SetWeight");
-                if (setWeightMethod != null)
+                thinkingTime += Time.deltaTime;
+                float subtleWave = 0.08f * Mathf.Sin(thinkingTime * 0.8f);
+                emotionWeightWithThinking = Mathf.Clamp01(currentExpressionWeight + subtleWave);
+            }
+
+            // 设置当前情感表情
+            if (!string.IsNullOrEmpty(currentExpressionName))
+            {
+                var currentKey = StringToExpressionKey(currentExpressionName);
+                try
                 {
-                    // 重置前一个表情
-                    if (!string.IsNullOrEmpty(previousExpressionName) && previousExpressionName != currentExpressionName)
-                    {
-                        var prevKey = StringToExpressionKey(previousExpressionName);
-                        setWeightMethod.Invoke(expressionManager, new object[] { prevKey, 0f });
-                    }
-
-                    // 设置当前表情
-                    var currentKey = StringToExpressionKey(currentExpressionName);
-                    setWeightMethod.Invoke(expressionManager, new object[] { currentKey, currentExpressionWeight });
-
-                    // 如果权重接近目标，更新前一个表情名称
-                    if (Mathf.Abs(currentExpressionWeight - targetExpressionWeight) < 0.01f)
-                    {
-                        previousExpressionName = currentExpressionName;
-                    }
+                    setWeightMethod.Invoke(expressionManager, new object[] { currentKey, emotionWeightWithThinking });
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"设置表情失败: {ex.Message}");
                 }
             }
-            catch (System.Exception e)
+
+            // 总是淡出前一个表情（确保旧表情权重归零）
+            if (!string.IsNullOrEmpty(previousExpressionName) && previousExpressionName != currentExpressionName && previousExpressionName != "aa")
             {
-                Debug.LogWarning($"更新表情失败: {e.Message}");
+                var prevKey = StringToExpressionKey(previousExpressionName);
+                try
+                {
+                    setWeightMethod.Invoke(expressionManager, new object[] { prevKey, 0f });
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"淡出表情失败: {ex.Message}");
+                }
+
+                // 权重接近目标时，清除previousExpressionName（避免重复淡出）
+                if (Mathf.Abs(currentExpressionWeight - targetExpressionWeight) < 0.01f)
+                {
+                    previousExpressionName = null;
+                }
             }
+
+            // ===== 口型层：独立渲染 =====
+            // 如果口型未激活，强制目标权重为0
+            if (!isMouthActive)
+            {
+                targetMouthWeight = 0f;
+            }
+
+            // 口型层平滑Lerp（速度快，mouthBlendSpeed）
+            currentMouthWeight = Mathf.Lerp(
+                currentMouthWeight,
+                targetMouthWeight,
+                Time.deltaTime * mouthBlendSpeed
+            );
+
+            // 设置aa表情权重（口型开度）
+            var aaKey = ExpressionKey.CreateFromPreset(ExpressionPreset.aa);
+            try
+            {
+                setWeightMethod.Invoke(expressionManager, new object[] { aaKey, currentMouthWeight });
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"设置口型权重失败: {ex.Message}");
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"表情更新异常: {e.Message}");
         }
     }
 
