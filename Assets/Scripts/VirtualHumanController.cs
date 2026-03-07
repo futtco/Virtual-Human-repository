@@ -281,12 +281,14 @@ public class VirtualHumanController : MonoBehaviour
             yield break;
         }
 
-        // 将音频数据写入临时文件
-        string tempAudioPath = System.IO.Path.Combine(Application.persistentDataPath, "temp_speech.wav");
+        // 根据返回的格式确定文件扩展名
+        string fileExtension = string.IsNullOrEmpty(response.format) ? "wav" : response.format.ToLower();
+        string tempAudioPath = System.IO.Path.Combine(Application.persistentDataPath, $"temp_speech.{fileExtension}");
+
         try
         {
             System.IO.File.WriteAllBytes(tempAudioPath, audioData);
-            Debug.Log($"音频已保存到: {tempAudioPath}");
+            Debug.Log($"音频已保存到: {tempAudioPath} (格式: {fileExtension})");
         }
         catch (System.Exception e)
         {
@@ -294,16 +296,19 @@ public class VirtualHumanController : MonoBehaviour
             yield break;
         }
 
+        // 确定AudioType
+        AudioType audioType = fileExtension == "mp3" ? AudioType.MPEG : AudioType.WAV;
+
         // 加载并播放音频，等待完成
-        yield return StartCoroutine(LoadAndPlayAudioFromFile(tempAudioPath));
+        yield return StartCoroutine(LoadAndPlayAudioFromFile(tempAudioPath, audioType));
     }
 
     /// <summary>
     /// 从文件加载并播放音频
     /// </summary>
-    private IEnumerator LoadAndPlayAudioFromFile(string filePath)
+    private IEnumerator LoadAndPlayAudioFromFile(string filePath, AudioType audioType)
     {
-        using (UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip($"file://{filePath}", AudioType.WAV))
+        using (UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip($"file://{filePath}", audioType))
         {
             yield return www.SendWebRequest();
 

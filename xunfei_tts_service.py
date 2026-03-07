@@ -42,6 +42,10 @@ class TTSEngine:
     def generate_speech(self, text: str) -> bytes:
         raise NotImplementedError
 
+    def get_audio_format(self) -> str:
+        """返回音频格式 (wav, mp3等)"""
+        return "wav"  # 默认返回wav
+
 class GTTSEngine(TTSEngine):
     """Google Text-to-Speech 引擎"""
     def __init__(self):
@@ -105,14 +109,18 @@ class EdgeTTSEngine(TTSEngine):
             self.edge_tts = None
             self.has_pydub = False
 
+    def get_audio_format(self) -> str:
+        """返回实际的音频格式"""
+        return "wav" if self.has_pydub else "mp3"
+
     def _check_pydub(self):
-        """检查 pydub 是否安装"""
+        """检查 pydub 是否可用（Python 3.13 暂不支持）"""
         try:
-            from pydub import AudioSegment
+            __import__('pydub')
             logger.info("✓ pydub 已加载 (用于MP3->WAV转换)")
             return True
-        except ImportError:
-            logger.warning("⚠ pydub 未安装，Edge TTS 输出将为 MP3 格式")
+        except (ImportError, ModuleNotFoundError):
+            logger.info("ℹ 使用 MP3 格式输出（无需转换，Unity 原生支持）")
             return False
 
     def generate_speech(self, text: str) -> bytes:
@@ -468,7 +476,8 @@ def text_to_speech():
 
         logger.info(f"开始生成语音: {text}")
         audio_data = tts_engine.generate_speech(text)
-        logger.info(f"语音生成成功，长度: {len(audio_data)} 字节")
+        audio_format = tts_engine.get_audio_format()
+        logger.info(f"语音生成成功，格式: {audio_format}, 长度: {len(audio_data)} 字节")
 
         # 转换为base64
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
@@ -477,9 +486,9 @@ def text_to_speech():
         response = jsonify({
             'success': True,
             'audio_data': audio_base64,
-            'format': 'wav'
+            'format': audio_format
         })
-        logger.info(f"返回TTS响应 (200 OK)")
+        logger.info(f"返回TTS响应 (200 OK, 格式: {audio_format})")
         return response
 
     except Exception as e:

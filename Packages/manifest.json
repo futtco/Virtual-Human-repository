@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "com.hecomi.ulipsync": "file:../Assets/uLipSync",
+    "com.hecomi.ulipsync": "file:uLipSync",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.burst": "1.8.28",
     "com.unity.collab-proxy": "2.10.2",

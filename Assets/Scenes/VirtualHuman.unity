@@ -461,6 +461,8 @@ MonoBehaviour:
   phoneme_U_Weight: 0.6
   phoneme_E_Weight: 0.5
   phoneme_O_Weight: 0.8
+  emotionDisplayDuration: 2
+  emotionFadeDuration: 1
 --- !u!114 &399191213
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3211,10 +3213,10 @@ MonoBehaviour:
   waveContainer: {fileID: 6016180588282136459}
   undoIcon: {fileID: 7204451309154039377}
   loadIcon: {fileID: 7025735716064778755}
-  chatManager: {fileID: 0}
-  whisperManager: {fileID: 0}
-  aiManager: {fileID: 0}
-  virtualHumanController: {fileID: 0}
+  chatManager: {fileID: 2550246888820542816}
+  whisperManager: {fileID: 6597438567997422003}
+  aiManager: {fileID: 2368639899673509081}
+  virtualHumanController: {fileID: 7588068}
 --- !u!224 &7182276333561326225
 RectTransform:
   m_ObjectHideFlags: 0
