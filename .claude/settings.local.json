@@ -3,7 +3,10 @@
     "allow": [
       "Bash(find:*)",
       "Bash(rm:*)",
-      "Bash(unzip -l ~/Downloads/源文件2.zip)"
+      "Bash(unzip -l ~/Downloads/源文件2.zip)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:ieeexplore.ieee.org)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []
