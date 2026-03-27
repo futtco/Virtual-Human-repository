@@ -5,26 +5,47 @@ using System.Collections;
 using System.Collections.Generic;
 
 /// <summary>
-/// 虚拟人综合控制器 - 整合语音识别、AI回复、表情和口型
+/// 虚拟人综合控制器 - 整合语音识别、AI回复、表情、口型和肢体动作
+/// 状态机流程: Idle → Thinking → ActionSelection → Speaking → FadeOut → Idle
 /// </summary>
 public class VirtualHumanController : MonoBehaviour
 {
     /// <summary>
-    /// 虚拟人的说话状态
+    /// 虚拟人行为状态机
     /// </summary>
     private enum VirtualHumanState
     {
-        Idle,      // 空闲状态
-        Thinking,  // 等待AI回复中
-        Speaking,  // 正在说话
-        FadeOut    // 说话结束淡出
+        Idle,              // 空闲状态 - 中立表情，就绪
+        Thinking,          // 思考状态 - 等待AI回复，播放思考动画
+        ActionSelection,   // 动作选择状态 - 根据情感和内容选择肢体动作
+        Speaking,          // 说话状态 - 表情+口型+肢体动作并行
+        FadeOut            // 淡出状态 - 平滑淡出表情，停止动作
     }
+
+    /// <summary>
+    /// 肢体动作类型
+    /// </summary>
+    public enum VirtualHumanAction
+    {
+        None = 0,       // 无动作
+        Nod = 1,        // 点头
+        Shake = 2,      // 摇头
+        Greet = 3,      // 打招呼/挥手
+        Introduce = 4,  // 介绍（手部指向）
+        Surprise = 5,   // 惊讶
+        Dance = 6,      // 舞蹈
+        Thinking = 7    // 思考动作
+    }
+
     [Header("组件引用")]
     [SerializeField] private VRMExpressionController expressionController;
     [SerializeField] private LipSyncManager lipSyncManager;
     [SerializeField] private ChatManager chatManager;
     [SerializeField] private AIManager aiManager;
     [SerializeField] private AudioSource speakingAudioSource;
+
+    [Header("肢体动作")]
+    [SerializeField] private Animator bodyAnimator;
 
     [Header("文本转语音配置")]
     [SerializeField] private string ttsServiceUrl = "http://127.0.0.1:8000/tts";
@@ -33,6 +54,7 @@ public class VirtualHumanController : MonoBehaviour
     [SerializeField] private float postSpeakFadeDuration = 1.0f;   // 说完后淡出时长
 
     private VirtualHumanState currentState = VirtualHumanState.Idle;
+    private VirtualHumanAction currentAction = VirtualHumanAction.None;
     private bool isSpeaking = false;
     private Queue<string> messageQueue = new Queue<string>();
     private bool isProcessing = false;
@@ -41,35 +63,105 @@ public class VirtualHumanController : MonoBehaviour
     {
         // 自动查找组件
         if (expressionController == null)
-        {
             expressionController = GetComponent<VRMExpressionController>();
-        }
 
         if (lipSyncManager == null)
-        {
             lipSyncManager = GetComponent<LipSyncManager>();
-        }
 
         if (chatManager == null)
-        {
             chatManager = FindObjectOfType<ChatManager>();
-        }
 
         if (aiManager == null)
-        {
             aiManager = FindObjectOfType<AIManager>();
-        }
 
         if (speakingAudioSource == null)
-        {
             speakingAudioSource = GetComponent<AudioSource>();
-        }
 
-        Debug.Log("✓ 虚拟人控制器已初始化");
+        if (bodyAnimator == null)
+            bodyAnimator = GetComponent<Animator>();
+        if (bodyAnimator == null)
+            bodyAnimator = GetComponentInChildren<Animator>();
+        if (bodyAnimator == null)
+            bodyAnimator = FindObjectOfType<Animator>();
+
+        if (bodyAnimator != null)
+            Debug.Log($"VirtualHumanController 已初始化 | Animator 已找到: {bodyAnimator.gameObject.name}");
+        else
+            Debug.LogError("VirtualHumanController: 找不到 Animator 组件！请在 Inspector 中将 Body Animator 赋值");
+    }
+
+    // ============ 预设关键词响应 ============
+
+    /// <summary>
+    /// 预设响应：关键词 → 固定回复 + 指定动作，跳过AI调用
+    /// </summary>
+    [System.Serializable]
+    public class PresetResponse
+    {
+        public string[] keywords;           // 触发关键词（任意一个匹配即触发）
+        public string response;             // 固定回复文本
+        public VirtualHumanAction action;   // 指定动作
+        public ExpressionPreset emotion;    // 指定表情
+    }
+
+    private readonly PresetResponse[] presetResponses = new PresetResponse[]
+    {
+        new PresetResponse {
+            keywords = new[] { "跳舞", "跳个舞", "舞蹈", "dance","跳一个" },
+            response = "当然会啦！看我的舞姿吧~",
+            action = VirtualHumanAction.Dance,
+            emotion = ExpressionPreset.happy
+        },
+        new PresetResponse {
+            keywords = new[] { "打个招呼", "挥挥手", "say hello", "wave" },
+            response = "你好呀！很高兴见到你~",
+            action = VirtualHumanAction.Greet,
+            emotion = ExpressionPreset.happy
+        },
+        new PresetResponse {
+            keywords = new[] { "点个头", "点头" },
+            response = "好的，没问题！",
+            action = VirtualHumanAction.Nod,
+            emotion = ExpressionPreset.happy
+        },
+        new PresetResponse {
+            keywords = new[] { "摇头", "摇摇头" },
+            response = "不不不，这可不行哦~",
+            action = VirtualHumanAction.Shake,
+            emotion = ExpressionPreset.sad
+        },
+        new PresetResponse {
+            keywords = new[] { "自我介绍", "介绍一下自己", "你是谁" },
+            response = "我是你的虚拟助手！我可以和你聊天、做表情、跳舞，还能回答你的问题哦~",
+            action = VirtualHumanAction.Introduce,
+            emotion = ExpressionPreset.neutral
+        },
+    };
+
+    /// <summary>
+    /// 检查用户消息是否匹配预设关键词，返回匹配的预设响应，无匹配返回null
+    /// </summary>
+    private PresetResponse MatchPresetResponse(string userMessage)
+    {
+        if (string.IsNullOrEmpty(userMessage)) return null;
+
+        string lowerMessage = userMessage.ToLower();
+        foreach (var preset in presetResponses)
+        {
+            foreach (var keyword in preset.keywords)
+            {
+                if (lowerMessage.Contains(keyword))
+                {
+                    Debug.Log($"匹配预设关键词: '{keyword}' → 动作={preset.action}, 回复={preset.response}");
+                    return preset;
+                }
+            }
+        }
+        return null;
     }
 
     /// <summary>
-    /// 处理用户消息并获取AI回复
+    /// 处理用户消息：先检查预设关键词，无匹配则走AI调用
     /// </summary>
     public void HandleUserMessage(string userMessage)
     {
@@ -87,10 +179,18 @@ public class VirtualHumanController : MonoBehaviour
             chatManager.AddSelfMessage(userMessage);
         }
 
-        // 获取AI回复
+        // 优先检查预设关键词
+        PresetResponse preset = MatchPresetResponse(userMessage);
+        if (preset != null)
+        {
+            // 预设响应：直接走固定流程，不调用AI
+            HandlePresetResponse(preset);
+            return;
+        }
+
+        // 无匹配：走AI调用
         if (aiManager != null)
         {
-            // 启动持续思考状态（直到AI回复完成）
             StartThinkingState();
 
             aiManager.GetAIResponse(
@@ -115,6 +215,65 @@ public class VirtualHumanController : MonoBehaviour
     }
 
     /// <summary>
+    /// 处理预设响应：显示回复 + 直接进入说话流程（带指定动作和表情）
+    /// </summary>
+    private void HandlePresetResponse(PresetResponse preset)
+    {
+        if (chatManager != null)
+        {
+            chatManager.AddOtherMessage(preset.response);
+        }
+
+        // 直接进入说话流程，使用预设的动作和表情
+        StartCoroutine(SpeakPresetMessage(preset));
+    }
+
+    /// <summary>
+    /// 预设消息的说话流程（指定动作+表情，不经过AnalyzeEmotion/SelectAction）
+    /// </summary>
+    private IEnumerator SpeakPresetMessage(PresetResponse preset)
+    {
+        Debug.Log($"预设响应说话: {preset.response} | 动作={preset.action} | 表情={preset.emotion}");
+
+        yield return null;
+
+        // Speaking 状态
+        currentState = VirtualHumanState.Speaking;
+
+        if (expressionController != null)
+        {
+            expressionController.SetExpression(preset.emotion);
+            expressionController.SetMouthActive(true);
+        }
+
+        // 播放指定动作
+        if (preset.action != VirtualHumanAction.None)
+        {
+            currentAction = preset.action;
+            PlayBodyAction(preset.action);
+        }
+
+        // 生成语音并播放
+        yield return StartCoroutine(GenerateAndPlaySpeech(preset.response));
+
+        // FadeOut
+        currentState = VirtualHumanState.FadeOut;
+
+        if (expressionController != null)
+            expressionController.SetMouthActive(false);
+
+        StopBodyAction();
+        currentAction = VirtualHumanAction.None;
+
+        yield return new WaitForSeconds(postSpeakFadeDuration);
+
+        if (expressionController != null)
+            expressionController.ResetExpression();
+
+        currentState = VirtualHumanState.Idle;
+    }
+
+    /// <summary>
     /// 处理AI回复 - 显示消息、生成语音、播放动画
     /// </summary>
     private void HandleAIResponse(string aiResponse)
@@ -135,28 +294,34 @@ public class VirtualHumanController : MonoBehaviour
     }
 
     /// <summary>
-    /// 启动思考状态 - 持续idle动画
+    /// 启动思考状态 - 表情思考动画
+    /// 注意：肢体思考动作需要Animator中配置ActionType==7的Transition才会生效
     /// </summary>
     private void StartThinkingState()
     {
         currentState = VirtualHumanState.Thinking;
+
         if (expressionController != null)
-        {
             expressionController.StartThinkingAnimation();
+
+        // 如果Animator中配置了Thinking状态(ActionType=7)，则播放思考动作
+        if (bodyAnimator != null)
+        {
+            PlayBodyAction(VirtualHumanAction.Thinking);
         }
     }
 
     /// <summary>
-    /// 停止思考状态
+    /// 停止思考状态（只停止表情动画，不触发Animator Trigger）
+    /// Animator的状态切换由SpeakMessage中的PlayBodyAction负责
     /// </summary>
     private void StopThinkingState()
     {
-        currentState = VirtualHumanState.Speaking;
         if (expressionController != null)
-        {
             expressionController.StopThinkingAnimation();
-        }
     }
+
+    private static readonly string PARAM_ACTION_TYPE = "ActionType";
 
     /// <summary>
     /// 处理消息队列 - 按顺序生成语音并播放
@@ -175,37 +340,121 @@ public class VirtualHumanController : MonoBehaviour
     }
 
     /// <summary>
-    /// 让虚拟人说话 - 调用TTS生成语音，带表情和口型动画
+    /// 让虚拟人说话 - 完整状态机流程:
+    /// ActionSelection(分析情感+选择动作) → Speaking(表情+口型+动作并行) → FadeOut(淡出) → Idle
     /// </summary>
     private IEnumerator SpeakMessage(string message)
     {
         Debug.Log($"虚拟人说话: {message}");
 
-        // 第1步：根据内容分析情感表情
+        // === ActionSelection 状态：分析情感 + 选择肢体动作 ===
+        currentState = VirtualHumanState.ActionSelection;
         ExpressionPreset emotion = AnalyzeEmotion(message);
+        VirtualHumanAction action = SelectAction(message, emotion);
+        Debug.Log($"动作选择完成: 情感={emotion}, 动作={action}");
+
+        // 等待一帧，确保Animator已从上一个状态回到Idle
+        yield return null;
+
+        // === Speaking 状态：表情 + 口型 + 肢体动作并行执行 ===
+        currentState = VirtualHumanState.Speaking;
+
+        // 设置情感表情
         if (expressionController != null)
         {
             expressionController.SetExpression(emotion);
             expressionController.SetMouthActive(true);
         }
 
-        // 第2步：生成语音并播放
+        // 并行启动肢体动作（非阻塞）
+        if (action != VirtualHumanAction.None)
+        {
+            currentAction = action;
+            PlayBodyAction(action);
+        }
+
+        // 生成语音并播放（主流程等待音频播放完成）
         yield return StartCoroutine(GenerateAndPlaySpeech(message));
 
-        // 第3步：停止口型动画（平滑关闭嘴巴）
-        if (expressionController != null)
-        {
-            expressionController.SetMouthActive(false);
-        }
+        // === FadeOut 状态：平滑淡出表情，停止动作 ===
+        currentState = VirtualHumanState.FadeOut;
 
-        // 第4步：等待淡出时长
+        // 停止口型
+        if (expressionController != null)
+            expressionController.SetMouthActive(false);
+
+        // 停止肢体动作
+        StopBodyAction();
+        currentAction = VirtualHumanAction.None;
+
+        // 等待淡出
         yield return new WaitForSeconds(postSpeakFadeDuration);
 
-        // 第5步：回到neutral表情
+        // 回到neutral表情
         if (expressionController != null)
-        {
             expressionController.ResetExpression();
-        }
+
+        // === 回到 Idle 状态 ===
+        currentState = VirtualHumanState.Idle;
+    }
+
+    // ============ 动作选择与播放 ============
+
+    /// <summary>
+    /// 根据对话内容和情感分析结果选择肢体动作
+    /// </summary>
+    private VirtualHumanAction SelectAction(string text, ExpressionPreset emotion)
+    {
+        if (string.IsNullOrEmpty(text)) return VirtualHumanAction.None;
+
+        string lowerText = text.ToLower();
+
+        // 问候/欢迎 → 打招呼
+        if (lowerText.Contains("你好") || lowerText.Contains("欢迎") || lowerText.Contains("嗨")
+            || lowerText.Contains("hello") || lowerText.Contains("hi"))
+            return VirtualHumanAction.Greet;
+
+        // 惊讶情感 → 惊讶动作
+        if (emotion == ExpressionPreset.surprised)
+            return VirtualHumanAction.Surprise;
+
+        // 否定/道歉/无法回答 → 摇头
+        if (lowerText.Contains("不能") || lowerText.Contains("无法") || lowerText.Contains("不行")
+            || lowerText.Contains("抱歉") || lowerText.Contains("对不起") || lowerText.Contains("没办法"))
+            return VirtualHumanAction.Shake;
+
+        // 介绍/展示 → 介绍动作
+        if (lowerText.Contains("介绍") || lowerText.Contains("功能") || lowerText.Contains("这是")
+            || lowerText.Contains("首先") || lowerText.Contains("其次"))
+            return VirtualHumanAction.Introduce;
+
+        // 明确肯定 → 点头（只在语气较强的肯定时触发）
+        if (lowerText.Contains("当然") || lowerText.Contains("没问题") || lowerText.Contains("一定")
+            || lowerText.Contains("是的") || lowerText.Contains("对的") || lowerText.Contains("确实"))
+            return VirtualHumanAction.Nod;
+
+        return VirtualHumanAction.None;
+    }
+
+    /// <summary>
+    /// 播放肢体动作（非阻塞，通过Animator触发）
+    /// </summary>
+    private void PlayBodyAction(VirtualHumanAction action)
+    {
+        if (bodyAnimator == null) return;
+
+        bodyAnimator.SetInteger(PARAM_ACTION_TYPE, (int)action);
+        Debug.Log($"播放肢体动作: {action} (ActionType={(int)action})");
+    }
+
+    /// <summary>
+    /// 停止肢体动作（回到Idle）
+    /// </summary>
+    private void StopBodyAction()
+    {
+        if (bodyAnimator == null) return;
+
+        bodyAnimator.SetInteger(PARAM_ACTION_TYPE, (int)VirtualHumanAction.None);
     }
 
     /// <summary>
@@ -376,9 +625,9 @@ public class VirtualHumanController : MonoBehaviour
             }
         }
 
-        // 优先级3：高兴/肯定
-        string[] happyKeywords = { "开心", "高兴", "好棒", "太棒了", "喜欢", "爱", "不错",
-                                   "好的", "好啊", "当然", "没问题", "欢迎", "感谢", "谢谢", "很好", "优秀" };
+        // 优先级3：高兴（只在真正表达高兴时触发，普通肯定走neutral）
+        string[] happyKeywords = { "开心", "高兴", "好棒", "太棒了", "太好了", "哈哈", "喜欢", "爱你",
+                                   "真开心", "好厉害", "厉害", "优秀", "完美", "恭喜", "庆祝" };
         foreach (var keyword in happyKeywords)
         {
             if (lowerText.Contains(keyword))
@@ -423,6 +672,16 @@ public class VirtualHumanController : MonoBehaviour
     /// 获取虚拟人是否正在说话
     /// </summary>
     public bool IsSpeaking => isSpeaking;
+
+    /// <summary>
+    /// 获取当前状态（用于调试和外部查询）
+    /// </summary>
+    public string CurrentStateName => currentState.ToString();
+
+    /// <summary>
+    /// 获取当前动作（用于调试和外部查询）
+    /// </summary>
+    public string CurrentActionName => currentAction.ToString();
 
     /// <summary>
     /// 触发特定表情
