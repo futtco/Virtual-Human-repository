@@ -49,23 +49,25 @@ class TTSEngine:
 class GTTSEngine(TTSEngine):
     """Google Text-to-Speech 引擎"""
     def __init__(self):
-        try:
-            from gtts import gTTS
-            self.gTTS = gTTS
-            logger.info("✓ gTTS 已加载")
-        except ImportError:
-            logger.warning("⚠ gTTS 未安装，运行: pip install gtts")
-            self.gTTS = None
-
+        from gtts import gTTS
+        self.gTTS = gTTS
+        logger.info("✓ gTTS 已加载")
+    
+    def get_audio_format(self) -> str:
+        return "mp3"
+    
     def generate_speech(self, text: str) -> bytes:
-        if self.gTTS is None:
-            raise RuntimeError("gTTS 未安装")
-
-        tts = self.gTTS(text=text, lang='zh-CN', slow=False)
-        audio_io = io.BytesIO()
-        tts.write_to_fp(audio_io)
-        audio_io.seek(0)
-        return audio_io.getvalue()
+        try:
+            logger.info(f"gTTS生成语音: {text[:50]}...")
+            tts = self.gTTS(text=text, lang='zh-CN', slow=False)
+            mp3_buffer = io.BytesIO()
+            tts.write_to_fp(mp3_buffer)
+            mp3_data = mp3_buffer.getvalue()
+            logger.info(f"✓ 生成成功 (MP3, {len(mp3_data)} 字节)")
+            return mp3_data
+        except Exception as e:
+            logger.error(f"gTTS生成失败: {e}")
+            raise
 
 class PyttsxEngine(TTSEngine):
     """pyttsx3 本地引擎 (离线)"""
@@ -97,78 +99,192 @@ class PyttsxEngine(TTSEngine):
         return data
 
 class EdgeTTSEngine(TTSEngine):
-    """Microsoft Edge TTS 引擎"""
+    """Microsoft Edge TTS 引擎 - 支持长文本分段和重试"""
     def __init__(self):
         try:
             import edge_tts
             self.edge_tts = edge_tts
             logger.info("✓ Edge TTS 已加载")
             self.has_pydub = self._check_pydub()
+            self.max_retries = 3  # 最大重试次数
+            self.retry_delay = 2  # 重试延迟（秒）
         except ImportError as e:
             logger.warning(f"⚠ edge-tts 未安装: {e}")
             self.edge_tts = None
             self.has_pydub = False
-
+    
     def get_audio_format(self) -> str:
         """返回实际的音频格式"""
         return "wav" if self.has_pydub else "mp3"
-
+    
     def _check_pydub(self):
-        """检查 pydub 是否可用（Python 3.13 暂不支持）"""
+        """检查 pydub 是否可用"""
         try:
             __import__('pydub')
             logger.info("✓ pydub 已加载 (用于MP3->WAV转换)")
             return True
         except (ImportError, ModuleNotFoundError):
-            logger.info("ℹ 使用 MP3 格式输出（无需转换，Unity 原生支持）")
+            logger.info("ℹ 使用 MP3 格式输出")
             return False
-
-    def generate_speech(self, text: str) -> bytes:
-        if self.edge_tts is None:
-            raise RuntimeError("edge-tts 未安装")
-
-        try:
-            # 使用异步函数生成语音
-            async def _generate():
+    
+    def _split_text(self, text: str, max_length: int = 30) -> List[str]:
+        """将长文本按标点符号分段"""
+        segments = []
+        current_segment = ""
+        
+        # 标点符号列表（包括中英文）
+        delimiters = set('。！？，；：.!?,;')
+        
+        for char in text:
+            current_segment += char
+            
+            # 遇到分隔符或达到最大长度
+            if char in delimiters or len(current_segment) >= max_length:
+                if current_segment.strip():
+                    segments.append(current_segment.strip())
+                current_segment = ""
+        
+        # 处理剩余文本
+        if current_segment.strip():
+            segments.append(current_segment.strip())
+        
+        return segments if segments else [text]
+    
+    async def _generate_single_with_retry(self, text: str, segment_index: int = 0, total_segments: int = 1) -> bytes:
+        """生成单个文本段的语音，带重试机制"""
+        last_error = None
+        
+        for attempt in range(self.max_retries):
+            try:
+                logger.info(f"生成语音 [{segment_index+1}/{total_segments}] 尝试 {attempt+1}/{self.max_retries}: {text[:30]}...")
+                
                 communicate = self.edge_tts.Communicate(
                     text=text,
-                    voice="zh-CN-XiaoxuanNeural",  # 女性声音
-                    rate="+0%"  # 正常速度
+                    voice="zh-CN-XiaoxuanNeural",
+                    rate="+0%"
                 )
+                
                 audio_data = io.BytesIO()
+                chunk_count = 0
+                
                 async for chunk in communicate.stream():
                     if chunk["type"] == "audio":
                         audio_data.write(chunk["data"])
-                return audio_data.getvalue()
-
-            # 创建新的事件循环来运行异步代码
+                        chunk_count += 1
+                    elif chunk["type"] == "WordBoundary":
+                        logger.debug(f"  收到文字边界: {chunk.get('text', '')}")
+                
+                result = audio_data.getvalue()
+                logger.info(f"✓ 成功生成语音 [{segment_index+1}/{total_segments}] (大小: {len(result)} 字节, 音频块: {chunk_count})")
+                return result
+                
+            except asyncio.TimeoutError as e:
+                last_error = e
+                logger.warning(f"✗ TTS超时 [{segment_index+1}/{total_segments}] (尝试 {attempt+1}/{self.max_retries}): {e}")
+                
+            except ConnectionError as e:
+                last_error = e
+                logger.warning(f"✗ TTS连接错误 [{segment_index+1}/{total_segments}] (尝试 {attempt+1}/{self.max_retries}): {e}")
+                
+            except Exception as e:
+                last_error = e
+                logger.warning(f"✗ TTS失败 [{segment_index+1}/{total_segments}] (尝试 {attempt+1}/{self.max_retries}): {type(e).__name__}: {e}")
+            
+            # 如果不是最后一次尝试，等待后重试
+            if attempt < self.max_retries - 1:
+                wait_time = self.retry_delay * (attempt + 1)  # 递增等待时间
+                logger.info(f"  等待 {wait_time} 秒后重试...")
+                await asyncio.sleep(wait_time)
+        
+        # 所有重试都失败
+        raise RuntimeError(f"TTS生成失败 [{segment_index+1}/{total_segments}]，已重试 {self.max_retries} 次。最后错误: {last_error}")
+    
+    async def _generate_all_segments(self, segments: List[str]) -> bytes:
+        """生成所有分段的语音，每个分段独立重试"""
+        all_audio_data = b""
+        failed_segments = []
+        
+        for i, segment in enumerate(segments):
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-            except RuntimeError:
+                segment_audio = await self._generate_single_with_retry(
+                    segment, 
+                    segment_index=i, 
+                    total_segments=len(segments)
+                )
+                all_audio_data += segment_audio
+                
+            except Exception as e:
+                logger.error(f"✗ 分段 {i+1} 生成最终失败: {e}")
+                failed_segments.append(i+1)
+                # 继续处理下一段，不中断整体流程
+        
+        if failed_segments:
+            logger.warning(f"⚠ 以下分段生成失败: {failed_segments}")
+            
+        if not all_audio_data:
+            raise RuntimeError("所有分段生成失败，无可用音频数据")
+        
+        return all_audio_data
+    
+    def _run_async(self, coro):
+        """运行异步协程的辅助方法"""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-
-            mp3_data = loop.run_until_complete(_generate())
-
-            # 如果有 pydub，转换 MP3 为 WAV
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
+    
+    def generate_speech(self, text: str) -> bytes:
+        """生成语音（主入口，带完整重试机制）"""
+        if self.edge_tts is None:
+            raise RuntimeError("edge-tts 未安装")
+        
+        logger.info(f"开始TTS生成: 文本长度={len(text)} 字符")
+        
+        try:
+            # 判断是否需要分段
+            if len(text) > 30:
+                logger.info(f"长文本检测，启用分段生成...")
+                segments = self._split_text(text, max_length=30)
+                logger.info(f"文本分为 {len(segments)} 段:")
+                for i, seg in enumerate(segments):
+                    logger.info(f"  段{i+1}: {seg[:30]}...")
+                
+                # 生成所有分段
+                mp3_data = self._run_async(self._generate_all_segments(segments))
+                logger.info(f"✓ 所有分段生成完成，总大小: {len(mp3_data)} 字节")
+            else:
+                # 短文本也使用重试机制
+                logger.info(f"短文本，直接生成（带重试）...")
+                async def generate_short():
+                    return await self._generate_single_with_retry(text, segment_index=0, total_segments=1)
+                
+                mp3_data = self._run_async(generate_short())
+                logger.info(f"✓ 短文本生成完成，大小: {len(mp3_data)} 字节")
+            
+            # 格式转换（如果需要）
             if self.has_pydub:
                 from pydub import AudioSegment
                 try:
+                    logger.info("转换音频格式: MP3 → WAV")
                     audio = AudioSegment.from_mp3(io.BytesIO(mp3_data))
                     wav_buffer = io.BytesIO()
                     audio.export(wav_buffer, format="wav")
-                    return wav_buffer.getvalue()
+                    wav_data = wav_buffer.getvalue()
+                    logger.info(f"✓ 格式转换完成，大小: {len(wav_data)} 字节")
+                    return wav_data
                 except Exception as e:
                     logger.warning(f"MP3转WAV失败，返回原始MP3: {e}")
                     return mp3_data
             else:
-                # 没有 pydub，直接返回 MP3
                 return mp3_data
+                
         except Exception as e:
-            logger.error(f"Edge TTS 生成失败: {e}")
+            logger.error(f"✗ Edge TTS 生成最终失败: {e}")
             raise
 
 class XunfeiTTSEngine(TTSEngine):
@@ -259,7 +375,7 @@ class XunfeiSparkEngine(AIEngine):
             self.conversations[session_id] = [
                 {
                     "role": "system",
-                    "content": "你是一个友好的虚拟人助手。使用中文回答用户问题。回复简洁，最多2-3句话，适合语音交互。"
+                    "content": "你是一个友好的虚拟人助手。请遵守以下规则：1.使用中文回答 2.每次回复不超过25个字 3.回复要简洁明了，适合语音交互。"
                 }
             ]
 
@@ -291,8 +407,10 @@ class XunfeiSparkEngine(AIEngine):
 
     def _ws_chat(self, messages: List[Dict[str, str]]) -> Optional[str]:
         """通过 WebSocket 获取 AI 回复"""
-        spark_url = "wss://spark-api.xf-yun.com/v1.1/chat"
-        domain = "lite"
+        spark_url = "wss://spark-api.xf-yun.com/x2"
+        domain = "spark-x"
+
+        logger.info(f"正在调用讯飞模型: domain={domain}, url={spark_url}")
 
         ws_param = WsParam(self.appid, self.api_key, self.api_secret, spark_url)
         ws_url = ws_param.create_url()
@@ -393,15 +511,18 @@ class XunfeiSparkEngine(AIEngine):
 
 # ==================== 全局实例 ====================
 
-# 初始化TTS引擎 (使用 Edge TTS)
+
+# 初始化TTS引擎 (使用 gTTS)
 tts_engine = None
 try:
-    tts_engine = EdgeTTSEngine()
-    if tts_engine.edge_tts is None:
+    tts_engine = GTTSEngine()
+    if tts_engine.gTTS is None:
         tts_engine = None
-        logger.error("❌ Edge TTS 未安装，运行: pip install edge-tts")
+        logger.error("❌ gTTS 未安装，运行: pip install gtts")
+    else:
+        logger.info("✓ 使用 Google TTS 引擎")
 except Exception as e:
-    logger.error(f"❌ 初始化 Edge TTS 失败: {e}")
+    logger.error(f"❌ 初始化 gTTS 失败: {e}")
 
 # 初始化AI引擎
 ai_engine = XunfeiSparkEngine()

@@ -329,6 +329,14 @@ public class VRMExpressionController : MonoBehaviour
                 }
             }
 
+            if (currentExpressionName != "neutral" && emotionWeightWithThinking < 0.01f)
+            {
+                Debug.Log($"表情 {currentExpressionName} 已淡出，自动切换回neutral");
+                currentExpressionName = "neutral";
+                currentExpressionWeight = 1.0f;
+                targetExpressionWeight = 1.0f;
+            }
+
             // 总是淡出前一个表情（确保旧表情权重归零）
             if (!string.IsNullOrEmpty(previousExpressionName) && previousExpressionName != currentExpressionName && previousExpressionName != "aa")
             {

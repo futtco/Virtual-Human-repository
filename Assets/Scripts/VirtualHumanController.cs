@@ -108,13 +108,13 @@ public class VirtualHumanController : MonoBehaviour
     {
         new PresetResponse {
             keywords = new[] { "跳舞", "跳个舞", "舞蹈", "dance","跳一个" },
-            response = "当然会啦！看我的舞姿吧~",
+            response = "当然会啦！看我的舞姿吧",
             action = VirtualHumanAction.Dance,
             emotion = ExpressionPreset.happy
         },
         new PresetResponse {
             keywords = new[] { "打个招呼", "挥挥手", "say hello", "wave" },
-            response = "你好呀！很高兴见到你~",
+            response = "你好呀！很高兴见到你",
             action = VirtualHumanAction.Greet,
             emotion = ExpressionPreset.happy
         },
@@ -122,20 +122,32 @@ public class VirtualHumanController : MonoBehaviour
             keywords = new[] { "点个头", "点头" },
             response = "好的，没问题！",
             action = VirtualHumanAction.Nod,
-            emotion = ExpressionPreset.happy
+            emotion = ExpressionPreset.neutral
         },
         new PresetResponse {
             keywords = new[] { "摇头", "摇摇头" },
-            response = "不不不，这可不行哦~",
+            response = "不不不，这可不行哦",
             action = VirtualHumanAction.Shake,
             emotion = ExpressionPreset.sad
         },
         new PresetResponse {
             keywords = new[] { "自我介绍", "介绍一下自己", "你是谁" },
-            response = "我是你的虚拟助手！我可以和你聊天、做表情、跳舞，还能回答你的问题哦~",
+            response = "我是你的虚拟助手！我可以和你聊天、做表情、跳舞，还能回答你的问题哦",
             action = VirtualHumanAction.Introduce,
             emotion = ExpressionPreset.neutral
         },
+        new PresetResponse {
+            keywords = new[] { "惊讶", "哇", "真的吗" },
+            response = "哇，这太神奇了！",
+            action = VirtualHumanAction.Surprise,
+            emotion = ExpressionPreset.surprised
+        },
+        new PresetResponse {
+            keywords = new[] {"生气","表演一下生气" },
+            response = "我的表情是不是很吓人？",
+            action = VirtualHumanAction.None,
+            emotion = ExpressionPreset.angry
+        }
     };
 
     /// <summary>
@@ -267,8 +279,8 @@ public class VirtualHumanController : MonoBehaviour
 
         yield return new WaitForSeconds(postSpeakFadeDuration);
 
-        if (expressionController != null)
-            expressionController.ResetExpression();
+        // if (expressionController != null)
+        //     expressionController.ResetExpression();
 
         currentState = VirtualHumanState.Idle;
     }
@@ -380,8 +392,8 @@ public class VirtualHumanController : MonoBehaviour
         currentState = VirtualHumanState.FadeOut;
 
         // 停止口型
-        if (expressionController != null)
-            expressionController.SetMouthActive(false);
+        // if (expressionController != null)
+        //     expressionController.SetMouthActive(false);
 
         // 停止肢体动作
         StopBodyAction();
@@ -553,44 +565,70 @@ public class VirtualHumanController : MonoBehaviour
     }
 
     /// <summary>
-    /// 从文件加载并播放音频
+    /// 从文件加载并播放音频（支持MP3和WAV）
     /// </summary>
     private IEnumerator LoadAndPlayAudioFromFile(string filePath, AudioType audioType)
     {
-        using (UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip($"file://{filePath}", audioType))
+        Debug.Log($"加载音频: {filePath}, 格式: {audioType}");
+        
+        AudioClip audioClip = null;
+        
+        // 使用UnityWebRequest加载音频
+        using (UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip("file://" + filePath, audioType))
         {
             yield return www.SendWebRequest();
-
+            
             if (www.result == UnityWebRequest.Result.Success)
             {
-                AudioClip audioClip = DownloadHandlerAudioClip.GetContent(www);
-
-                if (audioClip != null && audioClip.length > 0)
-                {
-                    Debug.Log($"音频加载成功: {audioClip.length} 秒");
-
-                    // 播放音频并进行口型同步
-                    if (lipSyncManager != null)
-                    {
-                        lipSyncManager.PlayAudioWithLipSync(audioClip);
-                    }
-                    else
-                    {
-                        speakingAudioSource.PlayOneShot(audioClip);
-                    }
-
-                    // 等待音频播放完成
-                    yield return new WaitForSeconds(Mathf.Max(audioClip.length, minSpeakingDuration));
-                }
-                else
-                {
-                    Debug.LogError("加载的音频无效");
-                }
+                audioClip = DownloadHandlerAudioClip.GetContent(www);
             }
             else
             {
                 Debug.LogError($"音频加载失败: {www.error}");
             }
+        }
+        
+        if (audioClip != null && audioClip.length > 0)
+        {
+            Debug.Log($"音频加载成功: {audioClip.length} 秒, 声道: {audioClip.channels}, 频率: {audioClip.frequency}");
+            
+            // 播放音频
+            if (lipSyncManager != null)
+            {
+                lipSyncManager.PlayAudioWithLipSync(audioClip);
+            }
+            else if (speakingAudioSource != null)
+            {
+                speakingAudioSource.clip = audioClip;
+                speakingAudioSource.Play();
+            }
+            
+            // 等待音频播放完成
+            yield return new WaitForSeconds(Mathf.Max(audioClip.length, minSpeakingDuration));
+            
+            // 清理
+            if (speakingAudioSource != null)
+            {
+                speakingAudioSource.clip = null;
+            }
+        }
+        else
+        {
+            Debug.LogError("无法加载音频或音频无效");
+        }
+        
+        // 删除临时文件
+        try
+        {
+            if (System.IO.File.Exists(filePath))
+            {
+                System.IO.File.Delete(filePath);
+                Debug.Log($"已清理临时文件: {filePath}");
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"清理临时文件失败: {e.Message}");
         }
     }
 
