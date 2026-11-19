@@ -111,3 +111,13 @@ Desktop.ini
 
 # Whisper large model files
 /[Aa]ssets/StreamingAssets/whisper/models/*.bin
+# 本地密钥配置（不要提交）
+.env
+.env.local
+
+# Claude Code 本地设置
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc

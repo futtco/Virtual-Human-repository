@@ -135,7 +135,24 @@ winget install FFmpeg         # Winget
 
 安装后确认 `ffmpeg -version` 能正常输出版本信息。
 
-### 5. 启动后端服务
+### 5. 配置讯飞凭证
+
+复制模板为本地配置文件，填入自己的 AppID / APIKey / APISecret（控制台：<https://console.xfyun.cn/> → 创建应用 → 星火认知大模型）：
+
+```bash
+cp .env.example .env
+```
+
+```ini
+# .env
+XUNFEI_APP_ID=your_app_id
+XUNFEI_API_KEY=your_api_key
+XUNFEI_API_SECRET=your_api_secret
+```
+
+> `.env` 已被 `.gitignore` 忽略，不会进入版本库。也可以不改文件、直接用系统环境变量（`export XUNFEI_APP_ID=...`），程序会优先读系统环境变量，其次读 `.env`。
+
+### 6. 启动后端服务
 
 ```bash
 python xunfei_tts_service.py
@@ -150,7 +167,7 @@ curl http://127.0.0.1:8000/health
 # {"status":"ok","ai_engine":"XunfeiSparkEngine","tts_engine":"EdgeTTSEngine",...}
 ```
 
-### 6. 运行 Unity 场景
+### 7. 运行 Unity 场景
 
 1. 用 Unity Hub 打开项目根目录，等待资源导入完成
 2. 打开场景 `Assets/Scenes/VirtualHuman.unity`
@@ -200,6 +217,7 @@ Virtual-Human-repository/
 ├── Packages/                           # UniVRM10 / uLipSync 内嵌包
 ├── xunfei_tts_service.py               # Python 后端：星火对话 + TTS
 ├── requirements.txt
+├── .env.example                        # 凭证模板（复制为 .env 使用）
 └── *.md                                # 设计文档、论文大纲、环境指南
 ```
 
@@ -287,15 +305,15 @@ Virtual-Human-repository/
 
 ## 安全提示
 
-`xunfei_tts_service.py` 中为方便答辩演示保留了默认凭证。若要长期公开或部署使用，请改为从环境变量读取，并到讯飞控制台轮换密钥：
+讯飞凭证**不在代码中出现**，只从系统环境变量或本地 `.env` 读取。`.env`、`.env.local` 均已加入 `.gitignore`。
 
-```bash
-export XUNFEI_APP_ID=your_app_id
-export XUNFEI_API_KEY=your_api_key
-export XUNFEI_API_SECRET=your_api_secret
+```ini
+XUNFEI_APP_ID=...
+XUNFEI_API_KEY=...
+XUNFEI_API_SECRET=...
 ```
 
-代码已优先读取环境变量，未设置时才回退到内置默认值，因此无需修改逻辑。
+缺失凭证时服务仍可启动（`/health` 正常），但 `/chat` 会返回「AI服务未初始化（缺少凭证）」，启动日志中也会给出明确提示。若要公开部署，建议只通过部署平台的环境变量注入，不给 `.env` 落盘。
 
 ---
 

@@ -35,6 +35,38 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ==================== 本地环境变量加载 ====================
+
+def _load_dotenv(path: str = None) -> None:
+    """从脚本同目录的 .env 文件加载环境变量（不覆盖已存在的系统环境变量）。
+
+    为避免引入额外依赖，这里用最简解析：每行 `KEY=VALUE`，`#` 开头为注释。
+    """
+    if path is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+
+    if not os.path.exists(path):
+        return
+
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, _, value = line.partition('=')
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+        logger.info("✓ 已从 .env 加载环境变量")
+    except Exception as e:
+        logger.warning(f"⚠ 读取 .env 失败: {e}")
+
+
+# 在任何引擎实例化之前加载，保证凭证可用
+_load_dotenv()
+
 # ==================== TTS 实现 ====================
 
 class TTSEngine:
@@ -355,16 +387,16 @@ class WsParam:
 class XunfeiSparkEngine(AIEngine):
     """讯飞星火 AI 引擎 - WebSocket 实现"""
     def __init__(self):
-        # 优先使用环境变量，其次使用默认凭证
-        self.appid = os.getenv('XUNFEI_APP_ID', '015d7801')
-        self.api_key = os.getenv('XUNFEI_API_KEY', 'd69d235ad78601c3b375024481b35572')
-        self.api_secret = os.getenv('XUNFEI_API_SECRET', 'OTEzYWE5MGIyYzY4ZDIzY2M5OGI0NTg0')
+        # 凭证只从环境变量 / .env 读取，绝不写入代码
+        self.appid = os.getenv('XUNFEI_APP_ID')
+        self.api_key = os.getenv('XUNFEI_API_KEY')
+        self.api_secret = os.getenv('XUNFEI_API_SECRET')
         self.conversations = {}
 
         if all([self.appid, self.api_key, self.api_secret]):
             logger.info("✓ 讯飞星火 AI 已初始化")
         else:
-            logger.warning("⚠ 讯飞凭证未完整设置")
+            logger.warning("⚠ 讯飞凭证缺失：请在 .env 中填写 XUNFEI_APP_ID / XUNFEI_API_KEY / XUNFEI_API_SECRET（参考 .env.example）")
 
     def get_response(self, message: str, session_id: str) -> str:
         if not all([self.appid, self.api_key, self.api_secret]):
@@ -695,7 +727,12 @@ if __name__ == '__main__':
             print(f"  {rule.rule} -> {rule.methods}")
 
     print("\n💡 提示:")
-    print("  1. 确保设置了环境变量: XUNFEI_APP_ID, XUNFEI_API_KEY, XUNFEI_API_SECRET")
+    if ai_engine.appid and ai_engine.api_key and ai_engine.api_secret:
+        print("  ✓ 讯飞凭证已就绪")
+    else:
+        print("  ❌ 讯飞凭证缺失，对话功能不可用！")
+        print("     复制 .env.example 为 .env，填入你的凭证后重启服务：")
+        print("     XUNFEI_APP_ID / XUNFEI_API_KEY / XUNFEI_API_SECRET")
     print("  2. 如果需要Google TTS, 运行: pip install gtts")
     print("  3. 或使用本地TTS, 运行: pip install pyttsx3")
     print("\n")
