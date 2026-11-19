@@ -279,7 +279,6 @@ Virtual-Human-repository/
 | [WINDOWS_SETUP_GUIDE.md](WINDOWS_SETUP_GUIDE.md) | Windows 环境配置与故障排查 |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 问题速查 |
 | [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | 早期实现记录（OpenAI 方案阶段） |
-| [THESIS_OUTLINE_REVISED.md](THESIS_OUTLINE_REVISED.md) / [THESIS_EXPANSION.md](THESIS_EXPANSION.md) | 论文大纲与内容扩写稿 |
 
 > 说明：`ARCHITECTURE.md` 与 `IMPLEMENTATION_SUMMARY.md` 记录的是项目中期采用 OpenAI GPT-4o Mini 的方案，当前代码已切换为本地 Python 服务 + 讯飞星火，阅读时请注意区分。
 
