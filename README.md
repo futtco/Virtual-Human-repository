@@ -190,6 +190,20 @@ curl http://127.0.0.1:8000/health
 
 `/tts` 会对长文本按 30 字分段合成再拼接，单段失败自动重试（最多 3 次）；Edge TTS 不可用时降级到 gTTS 或 pyttsx3。
 
+### 模型版本与额度
+
+星火各版本**独立计费**：换了版本必须先在控制台领取该版本的额度，否则会报 403 或额度不足。版本通过 `.env` 的 `SPARK_MODEL` 切换，代码无需改动：
+
+| `SPARK_MODEL` | 版本 | 请求地址 | `domain` | 说明 |
+| --- | --- | --- | --- | --- |
+| `x2`（默认） | 星火 X2 | `wss://spark-api.xf-yun.com/x2` | `spark-x` | 项目原本使用的版本 |
+| `lite` | Spark Lite | `wss://spark-api.xf-yun.com/v1.1/chat` | `lite` | 有免费额度，毕设演示够用 |
+| `pro` | Spark Pro | `wss://spark-api.xf-yun.com/v3.1/chat` | `generalv3` | |
+| `max` | Spark Max | `wss://spark-api.xf-yun.com/v3.5/chat` | `generalv3.5` | 官方公告 2026-03-10 下线并入 Ultra |
+| `ultra` | 4.0 Ultra | `wss://spark-api.xf-yun.com/v4.0/chat` | `4.0Ultra` | |
+
+Lite / Pro 的接口不支持 `system` 角色，程序会自动把系统提示合并进首条用户消息，不需要改代码。需要联网检索类插件时只能用 Pro / Max / Ultra。
+
 ---
 
 ## 目录结构
