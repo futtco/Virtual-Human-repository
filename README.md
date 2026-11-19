@@ -285,20 +285,6 @@ Virtual-Human-repository/
 
 ---
 
-## 安全提示
-
-`xunfei_tts_service.py` 中为方便答辩演示保留了默认凭证。若要长期公开或部署使用，请改为从环境变量读取，并到讯飞控制台轮换密钥：
-
-```bash
-export XUNFEI_APP_ID=your_app_id
-export XUNFEI_API_KEY=your_api_key
-export XUNFEI_API_SECRET=your_api_secret
-```
-
-代码已优先读取环境变量，未设置时才回退到内置默认值，因此无需修改逻辑。
-
----
-
 ## 致谢
 
 本项目基于以下开源工作完成：[UniVRM](https://github.com/vrm-c/UniVRM)、[uLipSync](https://github.com/hecomi/uLipSync)、[whisper.unity](https://github.com/Macoron/whisper.unity)、[whisper.cpp](https://github.com/ggerganov/whisper.cpp)、[edge-tts](https://github.com/rany2/edge-tts)。VRM 角色模型来自 VRoid Hub 公开素材，仅供学习与答辩演示使用。
