@@ -135,24 +135,7 @@ winget install FFmpeg         # Winget
 
 安装后确认 `ffmpeg -version` 能正常输出版本信息。
 
-### 5. 配置讯飞凭证
-
-复制模板为本地配置文件，填入自己的 AppID / APIKey / APISecret（控制台：<https://console.xfyun.cn/> → 创建应用 → 星火认知大模型）：
-
-```bash
-cp .env.example .env
-```
-
-```ini
-# .env
-XUNFEI_APP_ID=your_app_id
-XUNFEI_API_KEY=your_api_key
-XUNFEI_API_SECRET=your_api_secret
-```
-
-> `.env` 已被 `.gitignore` 忽略，不会进入版本库。也可以不改文件、直接用系统环境变量（`export XUNFEI_APP_ID=...`），程序会优先读系统环境变量，其次读 `.env`。
-
-### 6. 启动后端服务
+### 5. 启动后端服务
 
 ```bash
 python xunfei_tts_service.py
@@ -167,7 +150,7 @@ curl http://127.0.0.1:8000/health
 # {"status":"ok","ai_engine":"XunfeiSparkEngine","tts_engine":"EdgeTTSEngine",...}
 ```
 
-### 7. 运行 Unity 场景
+### 6. 运行 Unity 场景
 
 1. 用 Unity Hub 打开项目根目录，等待资源导入完成
 2. 打开场景 `Assets/Scenes/VirtualHuman.unity`
@@ -189,20 +172,6 @@ curl http://127.0.0.1:8000/health
 | `GET` | `/health` | 健康检查，返回当前 AI / TTS 引擎状态 |
 
 `/tts` 会对长文本按 30 字分段合成再拼接，单段失败自动重试（最多 3 次）；Edge TTS 不可用时降级到 gTTS 或 pyttsx3。
-
-### 模型版本与额度
-
-星火各版本**独立计费**：换了版本必须先在控制台领取该版本的额度，否则会报 403 或额度不足。版本通过 `.env` 的 `SPARK_MODEL` 切换，代码无需改动：
-
-| `SPARK_MODEL` | 版本 | 请求地址 | `domain` | 说明 |
-| --- | --- | --- | --- | --- |
-| `x2`（默认） | 星火 X2 | `wss://spark-api.xf-yun.com/x2` | `spark-x` | 项目原本使用的版本 |
-| `lite` | Spark Lite | `wss://spark-api.xf-yun.com/v1.1/chat` | `lite` | 有免费额度，毕设演示够用 |
-| `pro` | Spark Pro | `wss://spark-api.xf-yun.com/v3.1/chat` | `generalv3` | |
-| `max` | Spark Max | `wss://spark-api.xf-yun.com/v3.5/chat` | `generalv3.5` | 官方公告 2026-03-10 下线并入 Ultra |
-| `ultra` | 4.0 Ultra | `wss://spark-api.xf-yun.com/v4.0/chat` | `4.0Ultra` | |
-
-Lite / Pro 的接口不支持 `system` 角色，程序会自动把系统提示合并进首条用户消息，不需要改代码。需要联网检索类插件时只能用 Pro / Max / Ultra。
 
 ---
 
@@ -231,7 +200,6 @@ Virtual-Human-repository/
 ├── Packages/                           # UniVRM10 / uLipSync 内嵌包
 ├── xunfei_tts_service.py               # Python 后端：星火对话 + TTS
 ├── requirements.txt
-├── .env.example                        # 凭证模板（复制为 .env 使用）
 └── *.md                                # 设计文档、论文大纲、环境指南
 ```
 
@@ -319,15 +287,15 @@ Virtual-Human-repository/
 
 ## 安全提示
 
-讯飞凭证**不在代码中出现**，只从系统环境变量或本地 `.env` 读取。`.env`、`.env.local` 均已加入 `.gitignore`。
+`xunfei_tts_service.py` 中为方便答辩演示保留了默认凭证。若要长期公开或部署使用，请改为从环境变量读取，并到讯飞控制台轮换密钥：
 
-```ini
-XUNFEI_APP_ID=...
-XUNFEI_API_KEY=...
-XUNFEI_API_SECRET=...
+```bash
+export XUNFEI_APP_ID=your_app_id
+export XUNFEI_API_KEY=your_api_key
+export XUNFEI_API_SECRET=your_api_secret
 ```
 
-缺失凭证时服务仍可启动（`/health` 正常），但 `/chat` 会返回「AI服务未初始化（缺少凭证）」，启动日志中也会给出明确提示。若要公开部署，建议只通过部署平台的环境变量注入，不给 `.env` 落盘。
+代码已优先读取环境变量，未设置时才回退到内置默认值，因此无需修改逻辑。
 
 ---
 

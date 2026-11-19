@@ -35,38 +35,6 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ==================== 本地环境变量加载 ====================
-
-def _load_dotenv(path: str = None) -> None:
-    """从脚本同目录的 .env 文件加载环境变量（不覆盖已存在的系统环境变量）。
-
-    为避免引入额外依赖，这里用最简解析：每行 `KEY=VALUE`，`#` 开头为注释。
-    """
-    if path is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
-
-    if not os.path.exists(path):
-        return
-
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            for raw_line in f:
-                line = raw_line.strip()
-                if not line or line.startswith('#') or '=' not in line:
-                    continue
-                key, _, value = line.partition('=')
-                key = key.strip()
-                value = value.strip().strip('"').strip("'")
-                if key and key not in os.environ:
-                    os.environ[key] = value
-        logger.info("✓ 已从 .env 加载环境变量")
-    except Exception as e:
-        logger.warning(f"⚠ 读取 .env 失败: {e}")
-
-
-# 在任何引擎实例化之前加载，保证凭证可用
-_load_dotenv()
-
 # ==================== TTS 实现 ====================
 
 class TTSEngine:
@@ -384,40 +352,19 @@ class WsParam:
         url = self.spark_url + '?' + urlencode(v)
         return url
 
-# 星火模型版本 → (WebSocket 地址, domain) 对照表
-# 来源：https://www.xfyun.cn/doc/spark/Web.html （各版本独立计量 token，需分别领取额度）
-SPARK_MODELS = {
-    'x2':    ('wss://spark-api.xf-yun.com/x2',           'spark-x'),
-    'lite':  ('wss://spark-api.xf-yun.com/v1.1/chat',    'lite'),
-    'pro':   ('wss://spark-api.xf-yun.com/v3.1/chat',    'generalv3'),
-    'max':   ('wss://spark-api.xf-yun.com/v3.5/chat',    'generalv3.5'),
-    'ultra': ('wss://spark-api.xf-yun.com/v4.0/chat',    '4.0Ultra'),
-}
-
-# 这些版本的接口不支持 system 角色，系统提示需合并进首条用户消息
-NO_SYSTEM_ROLE_MODELS = {'lite', 'pro'}
-
-
 class XunfeiSparkEngine(AIEngine):
     """讯飞星火 AI 引擎 - WebSocket 实现"""
     def __init__(self):
-        # 凭证只从环境变量 / .env 读取，绝不写入代码
-        self.appid = os.getenv('XUNFEI_APP_ID')
-        self.api_key = os.getenv('XUNFEI_API_KEY')
-        self.api_secret = os.getenv('XUNFEI_API_SECRET')
+        # 优先使用环境变量，其次使用默认凭证
+        self.appid = os.getenv('XUNFEI_APP_ID', '015d7801')
+        self.api_key = os.getenv('XUNFEI_API_KEY', 'd69d235ad78601c3b375024481b35572')
+        self.api_secret = os.getenv('XUNFEI_API_SECRET', 'OTEzYWE5MGIyYzY4ZDIzY2M5OGI0NTg0')
         self.conversations = {}
 
-        # 模型版本可通过 SPARK_MODEL 切换（默认 x2），未识别的值回退到 x2
-        self.model = (os.getenv('SPARK_MODEL') or 'x2').strip().lower()
-        if self.model not in SPARK_MODELS:
-            logger.warning(f"⚠ 未知的 SPARK_MODEL={self.model}，回退到 x2")
-            self.model = 'x2'
-        self.spark_url, self.domain = SPARK_MODELS[self.model]
-
         if all([self.appid, self.api_key, self.api_secret]):
-            logger.info(f"✓ 讯飞星火 AI 已初始化（模型={self.model}, domain={self.domain}）")
+            logger.info("✓ 讯飞星火 AI 已初始化")
         else:
-            logger.warning("⚠ 讯飞凭证缺失：请在 .env 中填写 XUNFEI_APP_ID / XUNFEI_API_KEY / XUNFEI_API_SECRET（参考 .env.example）")
+            logger.warning("⚠ 讯飞凭证未完整设置")
 
     def get_response(self, message: str, session_id: str) -> str:
         if not all([self.appid, self.api_key, self.api_secret]):
@@ -458,28 +405,10 @@ class XunfeiSparkEngine(AIEngine):
             logger.error(f"AI调用失败: {e}")
             return f"抱歉，AI服务出错: {str(e)}"
 
-    def _adapt_messages(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """适配不支持 system 角色的模型（Lite / Pro）：把系统提示并入首条用户消息"""
-        if self.model not in NO_SYSTEM_ROLE_MODELS:
-            return messages
-
-        system_parts = [m.get('content', '') for m in messages if m.get('role') == 'system']
-        rest = [dict(m) for m in messages if m.get('role') != 'system']
-        if not system_parts:
-            return rest
-
-        prefix = "\n".join(p for p in system_parts if p)
-        if not rest:
-            return [{"role": "user", "content": prefix}]
-
-        rest[0]['content'] = f"{prefix}\n\n{rest[0]['content']}"
-        return rest
-
     def _ws_chat(self, messages: List[Dict[str, str]]) -> Optional[str]:
         """通过 WebSocket 获取 AI 回复"""
-        spark_url = self.spark_url
-        domain = self.domain
-        messages = self._adapt_messages(messages)
+        spark_url = "wss://spark-api.xf-yun.com/x2"
+        domain = "spark-x"
 
         logger.info(f"正在调用讯飞模型: domain={domain}, url={spark_url}")
 
@@ -757,7 +686,7 @@ if __name__ == '__main__':
     ⚙️  依赖检查:
     """)
 
-    print(f"  AI 引擎: {ai_engine.__class__.__name__} ✓  模型: {ai_engine.model} (domain={ai_engine.domain})")
+    print(f"  AI 引擎: {ai_engine.__class__.__name__} ✓")
     print(f"  TTS 引擎: {tts_engine.__class__.__name__ if tts_engine else '❌ 未找到'}")
 
     print("\n📋 已注册的路由:")
@@ -766,12 +695,7 @@ if __name__ == '__main__':
             print(f"  {rule.rule} -> {rule.methods}")
 
     print("\n💡 提示:")
-    if ai_engine.appid and ai_engine.api_key and ai_engine.api_secret:
-        print("  ✓ 讯飞凭证已就绪")
-    else:
-        print("  ❌ 讯飞凭证缺失，对话功能不可用！")
-        print("     复制 .env.example 为 .env，填入你的凭证后重启服务：")
-        print("     XUNFEI_APP_ID / XUNFEI_API_KEY / XUNFEI_API_SECRET")
+    print("  1. 确保设置了环境变量: XUNFEI_APP_ID, XUNFEI_API_KEY, XUNFEI_API_SECRET")
     print("  2. 如果需要Google TTS, 运行: pip install gtts")
     print("  3. 或使用本地TTS, 运行: pip install pyttsx3")
     print("\n")
